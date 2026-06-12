@@ -1,0 +1,120 @@
+<!doctype html>
+<html lang="ja">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Area Game Prototype</title>
+    <link rel="stylesheet" href="style.css" />
+    <style>
+      [hidden] {
+        display: none !important;
+      }
+    </style>
+  </head>
+  <body>
+    <main id="app">
+      <canvas id="game" aria-label="Area survival game"></canvas>
+
+      <section class="hud top-left" aria-live="polite">
+        <div class="meter">
+          <span>HP</span>
+          <strong id="hpText">100 / 100</strong>
+          <i id="hpBar"></i>
+        </div>
+        <div class="meter xp">
+          <span>LV</span>
+          <strong id="levelText">1</strong>
+          <i id="xpBar"></i>
+        </div>
+        <div class="wave-status" id="waveText">WAVE 1</div>
+        <div class="resources">
+          <span data-resource-counter="wood"><img class="resource-icon" src="assets/icons/resource-wood.png" alt="" />木 <strong id="woodText">0</strong></span>
+          <span data-resource-counter="stone"><img class="resource-icon" src="assets/icons/resource-stone.png" alt="" />石 <strong id="stoneText">0</strong></span>
+          <span data-resource-counter="gold"><img class="resource-icon" src="assets/icons/resource-gold.png" alt="" />金 <strong id="goldText">0</strong></span>
+          <span data-resource-counter="iron"><img class="resource-icon" src="assets/icons/resource-iron.png" alt="" />鉄 <strong id="ironText">0</strong></span>
+          <span data-resource-counter="meat"><img class="resource-icon" src="assets/icons/resource-meat.png" alt="" />肉 <strong id="meatText">0</strong></span>
+          <span data-resource-counter="starstone"><img class="resource-icon" src="assets/icons/resource-starstone.png" alt="" />星雫石 <strong id="starstoneText">0</strong></span>
+        </div>
+      </section>
+
+      <button id="equippedWeaponHud" class="hud equipped-weapon-hud" type="button">
+        <img id="equippedWeaponIcon" src="assets/sprites/icons/knife.png" alt="" />
+        <span>
+          <strong id="equippedWeaponName">ナイフ</strong>
+          <small id="equippedWeaponMeta">武器を選択</small>
+        </span>
+      </button>
+
+      <section id="weaponPanel" class="hud menu-panel weapon-panel" hidden>
+        <div class="panel-title">装備</div>
+        <div id="weaponList" class="weapon-list"></div>
+      </section>
+
+      <section id="enchantPanel" class="hud menu-panel enchant-panel" hidden>
+        <div class="panel-title">エンチャント</div>
+        <div id="enchantDescription" class="panel-note"></div>
+        <div id="enchantButtons" class="action-grid"></div>
+      </section>
+
+      <section id="buildPanel" class="hud menu-panel build-panel" hidden>
+        <div class="panel-title">設置</div>
+        <div id="buildButtons" class="action-grid"></div>
+      </section>
+
+      <section id="hirePanel" class="hud menu-panel hire-panel" hidden>
+        <div class="panel-title">雇う</div>
+        <div id="hireButtons" class="action-grid"></div>
+      </section>
+
+      <section id="skillPanel" class="hud menu-panel skill-panel" hidden>
+        <div class="panel-title">スキル</div>
+        <div id="skillButtons" class="skill-grid"></div>
+      </section>
+
+      <div id="menuBackdrop" class="menu-backdrop" hidden></div>
+      <nav id="radialMenu" class="radial-menu" aria-label="ゲームメニュー" hidden>
+        <button class="radial-item radial-weapons" type="button" data-menu="weapons">
+          <span class="radial-icon"><img src="assets/sprites/icons/knife.png" alt="" /></span>
+          <span>武器</span>
+        </button>
+        <button class="radial-item radial-enchants" type="button" data-menu="enchants">
+          <span class="radial-icon"><img src="assets/icons/enchant-damage.png" alt="" /></span>
+          <span>エンチャント</span>
+        </button>
+        <button class="radial-item radial-build" type="button" data-menu="build">
+          <span class="radial-icon"><img src="assets/icons/build-bomb.png" alt="" /></span>
+          <span>設置</span>
+        </button>
+        <button class="radial-item radial-hire" type="button" data-menu="hire">
+          <span class="radial-icon"><img src="assets/icons/hire-guard.png" alt="" /></span>
+          <span>雇う</span>
+        </button>
+        <button class="radial-item radial-skills" type="button" data-menu="skills">
+          <span class="radial-icon"><img src="assets/icons/skill-xp.png" alt="" /></span>
+          <span>スキル</span>
+        </button>
+      </nav>
+
+      <div id="levelUpBackdrop" class="level-up-backdrop" hidden></div>
+      <section id="levelUpPanel" class="hud level-up-panel" hidden>
+        <div class="panel-title">報酬選択</div>
+        <div class="level-up-title">レベルアップ報酬</div>
+        <div id="skillChoiceButtons" class="skill-choice-grid"></div>
+        <div class="level-up-actions">
+          <button id="rerollRewards" class="reroll-button" type="button">
+            <span>リロール</span>
+            <small id="rerollCount">星雫石 0</small>
+          </button>
+        </div>
+      </section>
+
+      <div id="joystick" class="joystick" hidden>
+        <div id="joystickKnob"></div>
+      </div>
+
+      <div id="toast" class="toast" hidden></div>
+    </main>
+
+    <script src="game.js"></script>
+  </body>
+</html>
