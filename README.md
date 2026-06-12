@@ -2,6 +2,8 @@
 
 Browser survival crafting prototype built as a static HTML/CSS/JavaScript game.
 
+Live site: https://frontierring.pipix.workers.dev
+
 ## Run Locally
 
 Open `index.html` directly in a browser, or serve the folder with a local static server:
