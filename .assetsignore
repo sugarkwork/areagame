@@ -1,0 +1,13 @@
+.git/
+.github/
+node_modules/
+dist/
+build/
+.env
+.env.*
+.assetsignore
+.gitignore
+README.md
+wrangler.jsonc
+*.log
+tmp-*.png

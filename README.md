@@ -14,7 +14,7 @@ Then open `http://127.0.0.1:8765/index.html`.
 
 ## Cloudflare Pages
 
-Use Cloudflare Workers & Pages with a GitHub-connected Pages project.
+Use Cloudflare Workers & Pages with a GitHub-connected project.
 
 - Framework preset: `None`
 - Build command: leave empty
@@ -22,3 +22,10 @@ Use Cloudflare Workers & Pages with a GitHub-connected Pages project.
 - Root directory: repository root
 
 The site is fully static and does not require a build step.
+
+For the Workers deployment flow, this repository includes `wrangler.jsonc`.
+Use:
+
+- Build command: leave empty
+- Deploy command: `npx wrangler deploy`
+- Non-production deploy command: `npx wrangler versions upload`
