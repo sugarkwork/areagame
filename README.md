@@ -1,4 +1,4 @@
-# Area Game Prototype
+# Frontier Ring
 
 Browser survival crafting prototype built as a static HTML/CSS/JavaScript game.
 
