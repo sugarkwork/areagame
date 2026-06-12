@@ -1950,8 +1950,8 @@ function canSpawnResourceAt(type, x, y) {
 function resourceSpawnPoint(type, nearPlayer) {
   const angle = rand(0, TAU);
   const distance = type === "starstone"
-    ? rand(nearPlayer ? 220 : 420, nearPlayer ? 1100 : 1900)
-    : nearPlayer ? rand(120, 780) : rand(280, 1600);
+    ? rand(nearPlayer ? 220 : 620, nearPlayer ? 1100 : 2200)
+    : nearPlayer ? rand(120, 820) : rand(720, 1550);
   return {
     x: player.x + Math.cos(angle) * distance + rand(-80, 80),
     y: player.y + Math.sin(angle) * distance + rand(-80, 80),
@@ -1968,7 +1968,7 @@ function spawnResource(type, nearPlayer = false) {
       break;
     }
   }
-  if (!point) return;
+  if (!point) return false;
 
   state.resources.push({
     type,
@@ -1979,24 +1979,36 @@ function spawnResource(type, nearPlayer = false) {
     radius: def.radius,
     amount: Math.round(rand(def.amount[0], def.amount[1])),
   });
+  return true;
 }
 
-function nearbyResourceCount(type, radius = 2100) {
+function nearbyResourceCount(type, radius = 1500) {
   return state.resources.filter((resource) => resource.type === type && Math.hypot(resource.x - player.x, resource.y - player.y) < radius).length;
+}
+
+function pruneDistantResources() {
+  state.resources = state.resources.filter((resource) => {
+    const keepRadius = resource.type === "starstone" ? 5600 : 4300;
+    return Math.hypot(resource.x - player.x, resource.y - player.y) < keepRadius;
+  });
 }
 
 function maintainAmbientResources(dt) {
   state.resourceSpawnTimer -= dt;
   if (state.resourceSpawnTimer > 0) return;
-  state.resourceSpawnTimer = 2.2;
+  state.resourceSpawnTimer = 0.9;
+  pruneDistantResources();
   const targets = {
-    wood: 26,
-    stone: 18,
-    gold: 10,
-    iron: 12,
+    wood: 32,
+    stone: 22,
+    gold: 12,
+    iron: 14,
   };
   for (const [type, count] of Object.entries(targets)) {
-    if (nearbyResourceCount(type) < count) spawnResource(type, false);
+    const shortage = count - nearbyResourceCount(type);
+    for (let i = 0; i < Math.min(4, shortage); i += 1) {
+      spawnResource(type, false);
+    }
   }
   if (nearbyResourceCount("starstone", 2400) < 1 && Math.random() < 0.22) {
     spawnResource("starstone", false);
@@ -4105,23 +4117,25 @@ function drawAllyStatus(ally, x, y, width = 40) {
   const level = ally.level || 1;
   const hpRatio = clamp(ally.hp / ally.maxHp, 0, 1);
   const xpRatio = clamp((ally.xp || 0) / (ally.xpNext || 1), 0, 1);
+  const barY = y + 31;
+  const labelY = y + 45;
   ctx.save();
   ctx.font = "700 10px 'Segoe UI', sans-serif";
   ctx.textAlign = "center";
   ctx.textBaseline = "middle";
   ctx.lineWidth = 3;
   ctx.strokeStyle = "rgba(23,20,20,0.72)";
-  ctx.strokeText(`LV${level}`, x, y - 43);
+  ctx.strokeText(`LV${level}`, x, labelY);
   ctx.fillStyle = "#f6f0db";
-  ctx.fillText(`LV${level}`, x, y - 43);
+  ctx.fillText(`LV${level}`, x, labelY);
   ctx.fillStyle = "rgba(0,0,0,0.52)";
-  ctx.fillRect(x - width / 2, y - 34, width, 4);
+  ctx.fillRect(x - width / 2, barY, width, 4);
   ctx.fillStyle = "#65c47b";
-  ctx.fillRect(x - width / 2, y - 34, width * hpRatio, 4);
+  ctx.fillRect(x - width / 2, barY, width * hpRatio, 4);
   ctx.fillStyle = "rgba(0,0,0,0.44)";
-  ctx.fillRect(x - width / 2, y - 28, width, 3);
+  ctx.fillRect(x - width / 2, barY + 6, width, 3);
   ctx.fillStyle = "#7dd3ff";
-  ctx.fillRect(x - width / 2, y - 28, width * xpRatio, 3);
+  ctx.fillRect(x - width / 2, barY + 6, width * xpRatio, 3);
   ctx.restore();
 }
 
