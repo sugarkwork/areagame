@@ -17,6 +17,7 @@ const ui = {
   equippedWeaponIcon: document.querySelector("#equippedWeaponIcon"),
   equippedWeaponName: document.querySelector("#equippedWeaponName"),
   equippedWeaponMeta: document.querySelector("#equippedWeaponMeta"),
+  quickMenuButton: document.querySelector("#quickMenuButton"),
   weaponList: document.querySelector("#weaponList"),
   enchantButtons: document.querySelector("#enchantButtons"),
   enchantDescription: document.querySelector("#enchantDescription"),
@@ -4723,6 +4724,13 @@ canvas.addEventListener("pointermove", movePointer);
 canvas.addEventListener("pointerup", endPointer);
 canvas.addEventListener("pointercancel", endPointer);
 ui.menuBackdrop.addEventListener("click", closeWorldMenu);
+if (ui.quickMenuButton) {
+  ui.quickMenuButton.addEventListener("click", () => {
+    if (state.skillChoice.open) return;
+    if (state.menu.open) closeWorldMenu();
+    else openWorldMenuAtPlayer();
+  });
+}
 ui.radialMenu.addEventListener("click", (event) => {
   const button = event.target.closest("[data-menu]");
   if (!button) return;

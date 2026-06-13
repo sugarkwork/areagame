@@ -273,6 +273,29 @@ button[disabled] {
   font-size: 11px;
 }
 
+.quick-menu-button {
+  right: 14px;
+  bottom: 14px;
+  z-index: 6;
+  display: grid;
+  place-items: center;
+  width: 56px;
+  height: 56px;
+  min-height: 56px;
+  padding: 0;
+  border-color: rgba(241, 184, 75, 0.42);
+  background: rgba(19, 25, 29, 0.86);
+}
+
+.quick-menu-button span {
+  display: block;
+  transform: translateY(-1px);
+  color: var(--accent);
+  font-size: 26px;
+  font-weight: 900;
+  line-height: 1;
+}
+
 .weapon-list {
   display: grid;
   gap: 7px;
@@ -798,6 +821,7 @@ button[disabled] {
   z-index: 12;
   width: min(760px, calc(100vw - 28px));
   max-height: min(78vh, 620px);
+  overflow: auto;
   padding: 14px;
   transform: translate(-50%, -50%);
 }
@@ -938,9 +962,71 @@ button[disabled] {
     grid-template-columns: 1fr;
   }
 
-  .skill-grid,
-  .skill-choice-grid {
+  .skill-grid {
     grid-template-columns: 1fr;
+  }
+
+  .skill-choice-grid {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: 6px;
+  }
+
+  .level-up-panel {
+    width: calc(100vw - 14px);
+    max-height: calc(100dvh - 18px);
+    padding: 10px;
+  }
+
+  .level-up-title {
+    margin-bottom: 8px;
+    font-size: 16px;
+  }
+
+  .skill-choice-card {
+    min-height: 174px;
+    padding: 8px 5px;
+    gap: 6px;
+  }
+
+  .skill-choice-card .skill-icon {
+    width: 54px;
+    height: 54px;
+  }
+
+  .skill-choice-card .skill-icon img {
+    width: 46px;
+    height: 46px;
+  }
+
+  .skill-choice-card .choice-copy {
+    gap: 5px;
+  }
+
+  .skill-choice-card strong {
+    gap: 3px;
+    font-size: 11px;
+    line-height: 1.2;
+  }
+
+  .skill-choice-card small {
+    max-width: 96px;
+    font-size: 10px;
+    line-height: 1.25;
+  }
+
+  .rarity-badge,
+  .reward-kind {
+    min-height: 18px;
+    padding: 1px 4px;
+    font-size: 9px;
+  }
+
+  .level-up-actions {
+    margin-top: 8px;
+  }
+
+  .reroll-button {
+    min-width: 132px;
   }
 
   .menu-panel {
@@ -987,6 +1073,15 @@ button[disabled] {
     min-height: 34px;
     padding: 6px 8px;
     font-size: 12px;
+  }
+
+  .quick-menu-button {
+    right: 10px;
+    bottom: 86px;
+    width: 54px;
+    height: 54px;
+    min-height: 54px;
+    padding: 0;
   }
 
   .toast {
