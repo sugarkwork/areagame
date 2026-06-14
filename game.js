@@ -56,13 +56,16 @@ const dist = (a, b) => Math.hypot(a.x - b.x, a.y - b.y);
 const now = () => performance.now() / 1000;
 const resourceKeys = ["wood", "stone", "gold", "iron", "meat", "starstone"];
 const PLAYER_XP_START = 24;
-const PLAYER_XP_CAP = 150;
-const PLAYER_XP_CAP_LEVEL = 20;
+const PLAYER_XP_EARLY_TARGET = 150;
+const PLAYER_XP_EARLY_TARGET_LEVEL = 20;
 
 function playerXpRequired(level) {
-  const cappedLevel = clamp(level, 1, PLAYER_XP_CAP_LEVEL);
-  const step = (PLAYER_XP_CAP - PLAYER_XP_START) / (PLAYER_XP_CAP_LEVEL - 1);
-  return Math.min(PLAYER_XP_CAP, Math.round(PLAYER_XP_START + (cappedLevel - 1) * step));
+  const earlyLevel = clamp(level, 1, PLAYER_XP_EARLY_TARGET_LEVEL);
+  const step = (PLAYER_XP_EARLY_TARGET - PLAYER_XP_START) / (PLAYER_XP_EARLY_TARGET_LEVEL - 1);
+  const earlyRequirement = Math.round(PLAYER_XP_START + (earlyLevel - 1) * step);
+  if (level <= PLAYER_XP_EARLY_TARGET_LEVEL) return earlyRequirement;
+  const lateLevel = level - PLAYER_XP_EARLY_TARGET_LEVEL;
+  return Math.round(PLAYER_XP_EARLY_TARGET + lateLevel * 6 + lateLevel * lateLevel * 0.28);
 }
 
 const spriteSheet = new Image();
@@ -738,8 +741,8 @@ const buildDefs = [
     label: "防壁",
     icon: "assets/icons/build-wall.png",
     type: "building",
-    rarity: "uncommon",
-    weight: 6,
+    rarity: "common",
+    weight: 9,
     cost: { wood: 8, stone: 6, iron: 1 },
     hp: 720,
   },
@@ -748,8 +751,8 @@ const buildDefs = [
     label: "物見やぐら",
     icon: "assets/icons/build-tower.png",
     type: "building",
-    rarity: "rare",
-    weight: 4,
+    rarity: "uncommon",
+    weight: 7,
     cost: { wood: 24, stone: 14, iron: 5, gold: 3 },
     hp: 720,
   },
