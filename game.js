@@ -45,6 +45,7 @@ const ui = {
   radialSkills: document.querySelector('[data-menu="skills"]'),
   joystick: document.querySelector("#joystick"),
   joystickKnob: document.querySelector("#joystickKnob"),
+  eventAlert: document.querySelector("#eventAlert"),
   toast: document.querySelector("#toast"),
 };
 
@@ -77,6 +78,13 @@ customSpriteSheet.onload = () => {
   customSpritesReady = true;
 };
 customSpriteSheet.src = "assets/sprites/custom-jrpg-chips.png";
+
+const bossSpriteSheet = new Image();
+let bossSpritesReady = false;
+bossSpriteSheet.onload = () => {
+  bossSpritesReady = true;
+};
+bossSpriteSheet.src = "assets/sprites/boss-jrpg-chips.png";
 
 const healerSpriteSheet = new Image();
 let healerSpritesReady = false;
@@ -226,6 +234,43 @@ const customSprites = {
   },
 };
 
+const bossSprites = {
+  enemies: {
+    ogreBoss: {
+      down: [box(0, 0, 96, 96), box(96, 0, 96, 96), box(192, 0, 96, 96)],
+      right: [box(0, 96, 96, 96), box(96, 96, 96, 96), box(192, 96, 96, 96)],
+      up: [box(0, 192, 96, 96), box(96, 192, 96, 96), box(192, 192, 96, 96)],
+      sideFaces: "right",
+      width: 90,
+      height: 92,
+    },
+    stormBirdBoss: {
+      down: [box(0, 288, 96, 96), box(96, 288, 96, 96), box(192, 288, 96, 96)],
+      right: [box(0, 384, 96, 96), box(96, 384, 96, 96), box(192, 384, 96, 96)],
+      up: [box(0, 480, 96, 96), box(96, 480, 96, 96), box(192, 480, 96, 96)],
+      sideFaces: "right",
+      width: 84,
+      height: 72,
+    },
+    wolf: {
+      down: [box(0, 576, 96, 96), box(96, 576, 96, 96), box(192, 576, 96, 96)],
+      right: [box(0, 672, 96, 96), box(96, 672, 96, 96), box(192, 672, 96, 96)],
+      up: [box(0, 768, 96, 96), box(96, 768, 96, 96), box(192, 768, 96, 96)],
+      sideFaces: "right",
+      width: 58,
+      height: 48,
+    },
+    wolfAlpha: {
+      down: [box(0, 864, 96, 96), box(96, 864, 96, 96), box(192, 864, 96, 96)],
+      right: [box(0, 960, 96, 96), box(96, 960, 96, 96), box(192, 960, 96, 96)],
+      up: [box(0, 1056, 96, 96), box(96, 1056, 96, 96), box(192, 1056, 96, 96)],
+      sideFaces: "right",
+      width: 74,
+      height: 58,
+    },
+  },
+};
+
 const allySprites = {
   healer: {
     down: [box(0, 0, 96, 144), box(96, 0, 96, 144), box(192, 0, 96, 144)],
@@ -265,6 +310,7 @@ const state = {
     options: [],
   },
   toastUntil: 0,
+  eventAlertUntil: 0,
   spawnTimer: 0,
   wave: {
     index: 1,
@@ -272,6 +318,8 @@ const state = {
     spawned: 0,
     spawnTimer: 0,
     timeoutWarned: false,
+    fixedQueue: [],
+    event: null,
   },
   resources: [],
   enemies: [],
@@ -934,6 +982,73 @@ const enemyDefs = {
     weight: 3,
     behavior: "ranged",
   },
+  wolf: {
+    id: "wolf",
+    label: "狼",
+    color: "#5f666a",
+    accent: "#f5cf59",
+    radius: 18,
+    hp: 42,
+    speed: [92, 116],
+    damage: 9,
+    attackCooldown: 0.85,
+    xp: 24,
+    meatChance: 0.82,
+    meatAmount: [1, 2],
+    weight: 4,
+    behavior: "melee",
+  },
+  ogreBoss: {
+    id: "ogreBoss",
+    label: "巨大オーガ",
+    color: "#69a25a",
+    accent: "#f1e5b8",
+    radius: 37,
+    hp: 680,
+    speed: [34, 44],
+    damage: 30,
+    attackCooldown: 1.55,
+    xp: 180,
+    meatChance: 1,
+    meatAmount: [6, 10],
+    weight: 1,
+    behavior: "melee",
+    boss: true,
+  },
+  stormBirdBoss: {
+    id: "stormBirdBoss",
+    label: "嵐鳥",
+    color: "#466594",
+    accent: "#82b5db",
+    radius: 30,
+    hp: 520,
+    speed: [116, 144],
+    damage: 22,
+    attackCooldown: 0.8,
+    xp: 175,
+    meatChance: 1,
+    meatAmount: [4, 7],
+    weight: 1,
+    behavior: "melee",
+    boss: true,
+  },
+  wolfAlpha: {
+    id: "wolfAlpha",
+    label: "群れ狼の王",
+    color: "#707884",
+    accent: "#94c6ee",
+    radius: 32,
+    hp: 450,
+    speed: [104, 132],
+    damage: 18,
+    attackCooldown: 0.72,
+    xp: 160,
+    meatChance: 1,
+    meatAmount: [5, 8],
+    weight: 1,
+    behavior: "melee",
+    boss: true,
+  },
 };
 
 function resize() {
@@ -1095,6 +1210,10 @@ function drawSpriteFrame(frame, screenX, groundY, width, height, options = {}) {
 
 function drawCustomSpriteFrame(frame, screenX, groundY, width, height, options = {}) {
   return drawSpriteFrameFrom(customSpriteSheet, customSpritesReady, frame, screenX, groundY, width, height, options);
+}
+
+function drawBossSpriteFrame(frame, screenX, groundY, width, height, options = {}) {
+  return drawSpriteFrameFrom(bossSpriteSheet, bossSpritesReady, frame, screenX, groundY, width, height, options);
 }
 
 function drawHealerSpriteFrame(frame, screenX, groundY, width, height, options = {}) {
@@ -1810,6 +1929,13 @@ function showToast(message) {
   state.toastUntil = state.time + 2.3;
 }
 
+function showEventAlert(title, detail) {
+  if (!ui.eventAlert) return;
+  ui.eventAlert.innerHTML = `<strong>${title}</strong><span>${detail}</span>`;
+  ui.eventAlert.hidden = false;
+  state.eventAlertUntil = state.time + 4.2;
+}
+
 function addFloatText(text, x, y, color = "#f6f0db") {
   state.floatText.push({ text, x, y, color, age: 0, life: 0.85 });
 }
@@ -2024,8 +2150,112 @@ function enemyDefById(id) {
   return enemyDefs[id] || enemyDefs.redSlime;
 }
 
+function waveTier(wave = state.wave.index) {
+  return Math.max(1, Math.floor(wave / 5));
+}
+
+function raidEnemyPoolForWave(wave) {
+  const tier = waveTier(wave);
+  const entries = [
+    { id: "redSlime", weight: Math.max(2, 9 - tier * 0.6) },
+    { id: "blueSlime", weight: 3 + tier * 0.35 },
+    { id: "greenSlime", weight: 3 + tier * 0.35 },
+    { id: "goblin", weight: wave >= 5 ? 3 + tier * 0.55 : 0 },
+  ].filter((entry) => entry.weight > 0);
+  if (wave >= 10) entries.push({ id: "boar", weight: 2 + tier * 0.35 });
+  if (wave >= 10) entries.push({ id: "goblinArcher", weight: 2 + tier * 0.3 });
+  if (wave >= 15) entries.push({ id: "wolf", weight: 2 + tier * 0.45 });
+  return entries;
+}
+
+function raidWaveDef(wave) {
+  const tier = waveTier(wave);
+  return {
+    total: 24 + tier * 11 + Math.floor(wave * 1.3),
+    maxActive: Math.min(28, 9 + tier * 4),
+    spawnInterval: Math.max(0.18, 0.48 - tier * 0.035),
+    timeout: 145 + tier * 18,
+    scale: 1 + (wave - 4) * 0.085 + tier * 0.04,
+    event: {
+      type: "raid",
+      label: "大襲撃",
+      title: `第${wave}ウェーブ 大襲撃`,
+      detail: `周辺の魔物が大群で押し寄せます。敵数 ${24 + tier * 11 + Math.floor(wave * 1.3)}体`,
+    },
+    enemies: raidEnemyPoolForWave(wave),
+  };
+}
+
+function bossPatternForWave(wave) {
+  const bossTier = Math.max(1, Math.floor(wave / 10));
+  const patterns = [
+    {
+      bossId: "ogreBoss",
+      label: "巨大オーガ襲撃",
+      detail: "巨大オーガがゴブリンとイノシシを引き連れてきます",
+      minions: [
+        { id: "goblin", weight: 5 },
+        { id: "boar", weight: 3 },
+        { id: "goblinArcher", weight: 2 },
+      ],
+    },
+    {
+      bossId: "stormBirdBoss",
+      label: "嵐鳥襲撃",
+      detail: "素早い鳥型ボスが遠距離部隊と混成群を率いてきます",
+      minions: [
+        { id: "greenSlime", weight: 4 },
+        { id: "goblinArcher", weight: 4 },
+        { id: "wolf", weight: 3 },
+      ],
+    },
+    {
+      bossId: "wolfAlpha",
+      label: "狼群襲撃",
+      detail: "群れ狼の王と高速の狼たちが包囲してきます",
+      minions: [
+        { id: "wolf", weight: 8 },
+        { id: "greenSlime", weight: 2 },
+        { id: "goblin", weight: 2 },
+      ],
+    },
+  ];
+  return patterns[(bossTier - 1) % patterns.length];
+}
+
+function bossWaveDef(wave) {
+  const tier = waveTier(wave);
+  const bossTier = Math.max(1, Math.floor(wave / 10));
+  const pattern = bossPatternForWave(wave);
+  const minionTotal = 14 + tier * 8 + bossTier * 3;
+  return {
+    total: minionTotal + 1,
+    maxActive: Math.min(24, 8 + tier * 3),
+    spawnInterval: Math.max(0.28, 0.82 - tier * 0.05),
+    timeout: 180 + tier * 24,
+    scale: 1 + (wave - 4) * 0.075,
+    event: {
+      type: "boss",
+      label: pattern.label,
+      title: `第${wave}ウェーブ ${pattern.label}`,
+      detail: pattern.detail,
+    },
+    fixedSpawns: [
+      { id: pattern.bossId, count: 1, scale: 1 + bossTier * 0.2 + tier * 0.08 },
+    ],
+    enemies: pattern.minions,
+  };
+}
+
+function eventWaveDef(wave) {
+  if (wave % 5 !== 0) return null;
+  return wave % 10 === 0 ? bossWaveDef(wave) : raidWaveDef(wave);
+}
+
 function currentWaveDef() {
   const wave = state.wave.index;
+  const eventDef = eventWaveDef(wave);
+  if (eventDef) return eventDef;
   if (wave === 1) {
     return {
       total: 10,
@@ -2086,6 +2316,16 @@ function weightedEnemyId(entries) {
   return entries[entries.length - 1].id;
 }
 
+function fixedSpawnQueue(entries = []) {
+  const queue = [];
+  for (const entry of entries) {
+    for (let i = 0; i < (entry.count || 1); i += 1) {
+      queue.push({ id: entry.id, scale: entry.scale, boss: true });
+    }
+  }
+  return queue;
+}
+
 function startWave(index = state.wave.index) {
   state.wave.index = index;
   state.wave.elapsed = 0;
@@ -2093,7 +2333,14 @@ function startWave(index = state.wave.index) {
   state.wave.spawnTimer = 0.8;
   state.wave.timeoutWarned = false;
   const def = currentWaveDef();
-  showToast(`第${state.wave.index}ウェーブ開始：合計${def.total}体 / 同時${def.maxActive}体`);
+  state.wave.fixedQueue = fixedSpawnQueue(def.fixedSpawns);
+  state.wave.event = def.event || null;
+  if (def.event) {
+    showEventAlert(def.event.title, def.event.detail);
+    showToast(`${def.event.label}：合計${def.total}体 / 同時${def.maxActive}体`);
+  } else {
+    showToast(`第${state.wave.index}ウェーブ開始：合計${def.total}体 / 同時${def.maxActive}体`);
+  }
 }
 
 function advanceWave(reason = "clear") {
@@ -2116,10 +2363,10 @@ function enemySpawnPoint() {
   };
 }
 
-function spawnEnemy(type = "redSlime") {
+function spawnEnemy(type = "redSlime", options = {}) {
   const def = enemyDefById(type);
-  const point = enemySpawnPoint();
-  const waveScale = currentWaveDef().scale || 1;
+  const point = options.point || enemySpawnPoint();
+  const waveScale = options.scale || currentWaveDef().scale || 1;
   const hp = Math.round(def.hp * waveScale);
   state.enemies.push({
     type: def.id,
@@ -2132,6 +2379,7 @@ function spawnEnemy(type = "redSlime") {
     speed: rand(def.speed[0], def.speed[1]) * Math.sqrt(waveScale),
     damage: Math.round(def.damage * (0.9 + waveScale * 0.1)),
     xp: Math.round(def.xp * waveScale),
+    boss: Boolean(def.boss || options.boss),
     attackCooldown: def.attackCooldown,
     behavior: def.behavior,
     range: def.range || 0,
@@ -2168,6 +2416,12 @@ function updateWave(dt) {
   if (!wave.timeoutWarned && def.timeout - wave.elapsed <= 10) {
     wave.timeoutWarned = true;
     showToast(`第${wave.index}ウェーブ残り10秒`);
+  }
+
+  while (wave.fixedQueue?.length && state.enemies.length < def.maxActive && wave.spawned < def.total) {
+    const spawn = wave.fixedQueue.shift();
+    spawnEnemy(spawn.id, { scale: spawn.scale, boss: spawn.boss });
+    wave.spawned += 1;
   }
 
   while (
@@ -3063,6 +3317,38 @@ function findEnemyTarget(enemy) {
   return { target, targetDistance };
 }
 
+function resolveEnemyWallCollision(enemy) {
+  for (const wall of state.buildings) {
+    if (wall.id !== "wall" || wall.hp <= 0) continue;
+    const minDistance = enemy.radius + wall.radius;
+    const dx = enemy.x - wall.x;
+    const dy = enemy.y - wall.y;
+    let d = Math.hypot(dx, dy);
+    if (d >= minDistance) continue;
+    if (d < 0.01) {
+      d = 0.01;
+      enemy.x += 0.01;
+    }
+    const nx = dx / d;
+    const ny = dy / d;
+    enemy.x = wall.x + nx * minDistance;
+    enemy.y = wall.y + ny * minDistance;
+    return wall;
+  }
+  return null;
+}
+
+function enemyHitBlockingWall(enemy, wall, multiplier = 1) {
+  enemy.moving = false;
+  enemy.rooted = Math.max(enemy.rooted || 0, 0.12);
+  enemy.moveDir = directionFromVector(wall.x - enemy.x, wall.y - enemy.y, enemy.moveDir);
+  if (enemy.attackTimer <= 0) {
+    enemy.attackTimer = Math.max(0.45, (enemy.attackCooldown || 1.1) * 0.8);
+    applyDamage(wall, enemy.damage * multiplier, enemy, "#aeb7b7");
+    addParticles(wall.x, wall.y, "#aeb7b7", 7, 95);
+  }
+}
+
 function moveEnemyToward(enemy, target, dt, speedMultiplier = 1) {
   if (enemy.rooted > 0) {
     enemy.moving = false;
@@ -3077,6 +3363,8 @@ function moveEnemyToward(enemy, target, dt, speedMultiplier = 1) {
   enemy.moving = true;
   enemy.x += (dx / len) * enemy.speed * speedMultiplier * slowFactor * terrainSpeed * dt;
   enemy.y += (dy / len) * enemy.speed * speedMultiplier * slowFactor * terrainSpeed * dt;
+  const wall = resolveEnemyWallCollision(enemy);
+  if (wall) enemyHitBlockingWall(enemy, wall);
 }
 
 function enemyMeleeAttack(enemy, target, targetDistance) {
@@ -3141,6 +3429,15 @@ function updateBoarEnemy(enemy, target, dt) {
     if (enemy.rooted <= 0) {
       enemy.x += enemy.chargeDir.x * enemy.chargeSpeed * slowFactor * terrainSpeed * dt;
       enemy.y += enemy.chargeDir.y * enemy.chargeSpeed * slowFactor * terrainSpeed * dt;
+    }
+    const blockingWall = resolveEnemyWallCollision(enemy);
+    if (blockingWall) {
+      enemyHitBlockingWall(enemy, blockingWall, 1.65);
+      enemy.chargeState = "windup";
+      enemy.stateTimer = 3.2;
+      enemy.hitTargets = [];
+      addFloatText("激突", enemy.x, enemy.y - 34, "#d67b42");
+      return;
     }
     for (const item of enemyProjectileTargetList()) {
       if (enemy.hitTargets.includes(item)) continue;
@@ -3219,6 +3516,8 @@ function updateEnemies(dt) {
           enemy.moving = true;
           enemy.x += (dx / len) * enemy.speed * 0.78 * terrainSpeed * dt;
           enemy.y += (dy / len) * enemy.speed * 0.78 * terrainSpeed * dt;
+          const wall = resolveEnemyWallCollision(enemy);
+          if (wall) enemyHitBlockingWall(enemy, wall, 0.8);
         }
       } else {
         enemy.moving = false;
@@ -3627,7 +3926,8 @@ function updateUi() {
   if (ui.waveText) {
     const waveDef = currentWaveDef();
     const remaining = Math.max(0, Math.ceil(waveDef.timeout - state.wave.elapsed));
-    ui.waveText.textContent = `WAVE ${state.wave.index}  ${state.wave.spawned}/${waveDef.total}  出現中 ${state.enemies.length}/${waveDef.maxActive}  残り ${remaining}s`;
+    const eventLabel = waveDef.event ? ` ${waveDef.event.label}` : "";
+    ui.waveText.textContent = `WAVE ${state.wave.index}${eventLabel}  ${state.wave.spawned}/${waveDef.total}  出現中 ${state.enemies.length}/${waveDef.maxActive}  残り ${remaining}s`;
   }
   ui.woodText.textContent = Math.floor(player.wood);
   ui.stoneText.textContent = Math.floor(player.stone);
@@ -3642,6 +3942,9 @@ function updateUi() {
 
   if (!ui.toast.hidden && state.time > state.toastUntil) {
     ui.toast.hidden = true;
+  }
+  if (ui.eventAlert && !ui.eventAlert.hidden && state.time > state.eventAlertUntil) {
+    ui.eventAlert.hidden = true;
   }
 }
 
@@ -3836,6 +4139,33 @@ function drawPlayer() {
 function drawEnemy(enemy) {
   const p = worldToScreen(enemy);
   const def = enemyDefById(enemy.type);
+  const bossSprite = bossSprites.enemies[enemy.type];
+  if (bossSprite && bossSpritesReady) {
+    const frame = spriteFrame(bossSprite, enemy.moveDir, enemy.moving || enemy.chargeState === "charge", 7);
+    const groundOffset = enemy.type === "stormBirdBoss" ? 18 : 24;
+    drawSpriteShadow(p.x, p.y + 18, bossSprite.width * 0.68, 12, 0.26);
+    drawBossSpriteFrame(frame.frame, p.x, p.y + groundOffset, frame.width, frame.height, { flip: frame.flip });
+    if (enemy.hurtFlash > 0) {
+      ctx.fillStyle = "rgba(255,255,190,0.3)";
+      ctx.beginPath();
+      ctx.arc(p.x, p.y + 2, enemy.radius + 8, 0, TAU);
+      ctx.fill();
+    }
+    if (enemy.rooted > 0 || enemy.slow > 0 || enemy.poison > 0) {
+      ctx.strokeStyle = enemy.poison > 0 ? "#a8e05f" : "#d8e6d3";
+      ctx.lineWidth = 2;
+      ctx.beginPath();
+      ctx.arc(p.x, p.y + 3, enemy.radius + 8, 0, TAU);
+      ctx.stroke();
+    }
+    const barWidth = enemy.boss ? Math.max(62, enemy.radius * 2.2) : 42;
+    const barY = p.y - bossSprite.height + groundOffset - 10;
+    ctx.fillStyle = "rgba(0,0,0,0.55)";
+    ctx.fillRect(p.x - barWidth / 2, barY, barWidth, 5);
+    ctx.fillStyle = enemy.boss ? "#e7564f" : "#65c47b";
+    ctx.fillRect(p.x - barWidth / 2, barY, barWidth * clamp(enemy.hp / enemy.maxHp, 0, 1), 5);
+    return;
+  }
   const customSprite = customSprites.enemies[enemy.type];
   if (customSprite && customSpritesReady) {
     const frame = spriteFrame(customSprite, enemy.moveDir, enemy.moving || enemy.chargeState === "charge", enemy.type.includes("Slime") ? 5 : 7);
