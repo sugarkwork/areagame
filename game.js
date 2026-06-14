@@ -311,6 +311,7 @@ const state = {
     startY: 0,
     x: 0,
     y: 0,
+    startedAt: 0,
     vector: { x: 0, y: 0 },
   },
   menu: {
@@ -341,6 +342,7 @@ const state = {
   projectiles: [],
   traps: [],
   buildings: [],
+  nextBuildingUid: 1,
   defenders: [],
   workers: [],
   drops: [],
@@ -385,6 +387,10 @@ const player = {
     rangedRange: 0,
     allySpeed: 0,
     allyPower: 0,
+    lucky: 0,
+    allyShotSpeed: 0,
+    allyRange: 0,
+    predictiveShot: 0,
   },
   unlocks: {
     weapons: { knife: true },
@@ -606,6 +612,42 @@ const skillDefs = [
     weight: 7,
     summary: (level) => `味方の最大HPと攻撃力 +${level * 7}%`,
   },
+  {
+    key: "lucky",
+    name: "ラッキー",
+    type: "passive",
+    icon: "assets/icons/skill-lucky.png",
+    rarity: "uncommon",
+    weight: 7,
+    summary: (level) => `追加ドロップ率 +${level * 6}%。素材と肉が少し増えやすくなります`,
+  },
+  {
+    key: "allyShotSpeed",
+    name: "味方射撃速度",
+    type: "passive",
+    icon: "assets/icons/skill-ally-shot-speed.png",
+    rarity: "uncommon",
+    weight: 6,
+    summary: (level) => `味方と建物の遠距離弾速 +${level * 10}%`,
+  },
+  {
+    key: "allyRange",
+    name: "味方射程距離",
+    type: "passive",
+    icon: "assets/icons/skill-ally-range.png",
+    rarity: "uncommon",
+    weight: 6,
+    summary: (level) => `味方の攻撃射程 +${level * 7}%`,
+  },
+  {
+    key: "predictiveShot",
+    name: "予測射撃",
+    type: "passive",
+    icon: "assets/icons/skill-predictive-shot.png",
+    rarity: "epic",
+    weight: 1,
+    summary: (level) => `味方の射撃が敵の移動先を狙う精度 +${level * 8}%`,
+  },
 ];
 
 const weapons = [
@@ -622,7 +664,7 @@ const weapons = [
     rarity: "common",
     weight: 0,
     rewardSummary: "最初から持っている短い近接武器",
-    enchants: { damage: 0, speed: 0, knockback: 0, bleed: 0, lifesteal: 0 },
+    enchants: { damage: 0, speed: 0, knockback: 0, bleed: 0, lifesteal: 0, projectileSpeed: 0, range: 0, homing: 0 },
   },
   {
     id: "ironSword",
@@ -637,7 +679,7 @@ const weapons = [
     rarity: "uncommon",
     weight: 8,
     rewardSummary: "高いノックバックを持つ安定した近接武器",
-    enchants: { damage: 0, speed: 0, knockback: 0, bleed: 0, lifesteal: 0 },
+    enchants: { damage: 0, speed: 0, knockback: 0, bleed: 0, lifesteal: 0, projectileSpeed: 0, range: 0, homing: 0 },
   },
   {
     id: "duelistBlade",
@@ -652,7 +694,7 @@ const weapons = [
     rarity: "rare",
     weight: 5,
     rewardSummary: "攻撃速度と出血に優れる近接武器",
-    enchants: { damage: 0, speed: 0, knockback: 0, bleed: 0, lifesteal: 0 },
+    enchants: { damage: 0, speed: 0, knockback: 0, bleed: 0, lifesteal: 0, projectileSpeed: 0, range: 0, homing: 0 },
   },
   {
     id: "longBow",
@@ -668,7 +710,7 @@ const weapons = [
     rarity: "uncommon",
     weight: 7,
     rewardSummary: "矢は無限。遠距離から敵を削れる",
-    enchants: { damage: 0, speed: 0, knockback: 0, bleed: 0, lifesteal: 0 },
+    enchants: { damage: 0, speed: 0, knockback: 0, bleed: 0, lifesteal: 0, projectileSpeed: 0, range: 0, homing: 0 },
   },
   {
     id: "sparkStaff",
@@ -685,7 +727,7 @@ const weapons = [
     rarity: "rare",
     weight: 4,
     rewardSummary: "範囲ダメージを持つ魔法武器",
-    enchants: { damage: 0, speed: 0, knockback: 0, bleed: 0, lifesteal: 0 },
+    enchants: { damage: 0, speed: 0, knockback: 0, bleed: 0, lifesteal: 0, projectileSpeed: 0, range: 0, homing: 0 },
   },
 ];
 
@@ -694,9 +736,12 @@ let equippedIndex = 0;
 const enchantDefs = [
   { key: "damage", label: "攻撃力", icon: "assets/icons/enchant-damage.png", rarity: "common", weight: 10, cost: { iron: 10, gold: 5 } },
   { key: "speed", label: "攻撃速度", icon: "assets/icons/enchant-speed.png", rarity: "common", weight: 9, cost: { wood: 8, meat: 4, gold: 2 } },
+  { key: "projectileSpeed", label: "射撃速度", icon: "assets/icons/enchant-projectile-speed.png", rarity: "uncommon", weight: 7, cost: { wood: 10, iron: 6, gold: 3 }, weaponTypes: ["遠距離", "魔法"] },
+  { key: "range", label: "射程", icon: "assets/icons/enchant-range.png", rarity: "uncommon", weight: 7, cost: { wood: 10, stone: 6, iron: 6, gold: 3 } },
   { key: "knockback", label: "ノックバック", icon: "assets/icons/enchant-knockback.png", rarity: "uncommon", weight: 7, cost: { wood: 12, stone: 8, iron: 8 } },
   { key: "bleed", label: "出血", icon: "assets/icons/enchant-bleed.png", rarity: "rare", weight: 5, cost: { meat: 8, iron: 4, gold: 6 } },
   { key: "lifesteal", label: "吸血", icon: "assets/icons/enchant-lifesteal.png", rarity: "epic", weight: 3, cost: { meat: 12, gold: 12 } },
+  { key: "homing", label: "ホーミング", icon: "assets/icons/enchant-homing.png", rarity: "epic", weight: 2, cost: { gold: 14, iron: 8, starstone: 1 }, weaponTypes: ["遠距離", "魔法"] },
 ];
 
 const buildDefs = [
@@ -767,6 +812,18 @@ const buildDefs = [
     weight: 7,
     cost: { wood: 24, stone: 14, iron: 5, gold: 3 },
     hp: 720,
+  },
+  {
+    id: "base",
+    label: "拠点",
+    icon: "assets/icons/build-base.png",
+    type: "building",
+    rarity: "uncommon",
+    weight: 6,
+    cost: { wood: 32, stone: 24, iron: 8, gold: 6, meat: 4 },
+    hp: 860,
+    healRadius: 220,
+    healRate: 0.012,
   },
 ];
 
@@ -1283,6 +1340,7 @@ function hideMenuPanels() {
 function clearPointerControl() {
   state.pointer.active = false;
   state.pointer.id = null;
+  state.pointer.startedAt = 0;
   state.pointer.vector.x = 0;
   state.pointer.vector.y = 0;
   ui.joystick.hidden = true;
@@ -1439,6 +1497,96 @@ function formationOffset(index) {
 
 function skillLevel(key) {
   return player.skills[key] || 0;
+}
+
+function enchantLevel(weapon, key) {
+  if (!weapon.enchants) weapon.enchants = {};
+  if (weapon.enchants[key] == null) weapon.enchants[key] = 0;
+  return weapon.enchants[key];
+}
+
+function enchantAppliesToWeapon(def, weapon) {
+  return !def.weaponTypes || def.weaponTypes.includes(weapon.type);
+}
+
+function allyRangeMultiplier() {
+  return 1 + skillLevel("allyRange") * 0.07;
+}
+
+function allyShotSpeedMultiplier() {
+  return 1 + skillLevel("allyShotSpeed") * 0.1;
+}
+
+function baseBuildings() {
+  return state.buildings.filter((building) => building.id === "base" && building.hp > 0);
+}
+
+function baseRadius(base) {
+  return base?.healRadius || buildDefById("base")?.healRadius || 220;
+}
+
+function assignedBase(ally) {
+  if (!ally?.assignedBaseUid) return null;
+  const base = baseBuildings().find((building) => building.uid === ally.assignedBaseUid);
+  if (!base) {
+    ally.assignedBaseUid = null;
+    return null;
+  }
+  return base;
+}
+
+function nearestBaseTo(entity) {
+  let best = null;
+  let bestDistance = Infinity;
+  for (const base of baseBuildings()) {
+    const d = Math.hypot(base.x - entity.x, base.y - entity.y);
+    if (d < bestDistance) {
+      best = base;
+      bestDistance = d;
+    }
+  }
+  return best;
+}
+
+function allyHomePosition(ally) {
+  const base = assignedBase(ally);
+  if (base) {
+    return {
+      x: base.x + (ally.homeOffset?.x || 0) * 0.32,
+      y: base.y + (ally.homeOffset?.y || 0) * 0.32,
+      base,
+    };
+  }
+  return {
+    x: player.x + (ally.homeOffset?.x || 0),
+    y: player.y + (ally.homeOffset?.y || 0),
+    base: null,
+  };
+}
+
+function withinAssignedBase(ally, target, padding = 0) {
+  const base = assignedBase(ally);
+  if (!base) return true;
+  return Math.hypot(target.x - base.x, target.y - base.y) <= baseRadius(base) + padding;
+}
+
+function assignAllyToNearestBase(ally) {
+  const base = nearestBaseTo(ally);
+  if (!base) {
+    showToast("拠点がありません");
+    return false;
+  }
+  ally.assignedBaseUid = base.uid;
+  ally.harvestTarget = null;
+  ally.repairTarget = null;
+  ally.repairJob = null;
+  ally.healTarget = null;
+  ally.fetchTarget = null;
+  ally.carryDrop = null;
+  showToast(`${ally.label}を${base.label}勤務にしました`);
+  addFloatText("拠点勤務", ally.x, ally.y - 50, "#7dd3ff");
+  addParticles(ally.x, ally.y, "#7dd3ff", 14, 105);
+  return true;
 }
 
 const rarityDefs = {
@@ -2041,8 +2189,23 @@ function splitDropAmount(amount, maxPieces) {
   return Array.from({ length: pieces }, (_, index) => base + (index < extra ? 1 : 0));
 }
 
+function luckyDropBonus(type, amount) {
+  const level = skillLevel("lucky");
+  if (level <= 0) return 0;
+  const chance = Math.min(0.65, level * 0.06);
+  const rolls = Math.max(1, Math.ceil(amount / (type === "meat" ? 1 : 4)));
+  let bonus = 0;
+  for (let i = 0; i < rolls; i += 1) {
+    if (Math.random() < chance) bonus += 1;
+  }
+  return bonus;
+}
+
 function spawnDrops(type, amount, x, y) {
-  const parts = splitDropAmount(Math.max(1, Math.round(amount)), type === "meat" ? 3 : 6);
+  const bonus = luckyDropBonus(type, amount);
+  const totalAmount = Math.max(1, Math.round(amount + bonus));
+  if (bonus > 0) addFloatText(`ラッキー +${bonus}`, x, y - 56, "#cfa7ff");
+  const parts = splitDropAmount(totalAmount, type === "meat" ? 3 : 6);
   parts.forEach((part, index) => {
     const angle = rand(0, TAU);
     const distance = rand(8, 34);
@@ -2227,6 +2390,7 @@ function saveAlly(ally) {
     searchRadius: ally.searchRadius || null,
     leash: ally.leash || null,
     healRange: ally.healRange || null,
+    assignedBaseUid: ally.assignedBaseUid || null,
   };
 }
 
@@ -2259,6 +2423,7 @@ function createSaveData() {
       })),
     },
     buildings: state.buildings.map((building) => ({
+      uid: building.uid || null,
       id: building.id,
       label: building.label,
       x: Math.round(building.x),
@@ -2266,6 +2431,8 @@ function createSaveData() {
       radius: building.radius,
       hp: Math.round(building.hp),
       maxHp: Math.round(building.maxHp),
+      healRadius: building.healRadius || null,
+      healRate: building.healRate || null,
     })),
     traps: state.traps.map((trap) => ({
       id: trap.id,
@@ -2362,22 +2529,29 @@ function restorePlayer(savedPlayer = {}) {
 }
 
 function restoreBuildings(savedBuildings = []) {
+  let maxUid = 0;
   state.buildings = savedBuildings.map((saved) => {
     const def = buildDefById(saved.id);
     if (!def || def.type !== "building") return null;
     const maxHp = Math.max(1, cleanInt(saved.maxHp, def.hp));
+    const uid = cleanInt(saved.uid, state.nextBuildingUid++);
+    maxUid = Math.max(maxUid, uid);
     return {
+      uid,
       id: def.id,
       label: def.label,
       x: cleanNumber(saved.x, player.x),
       y: cleanNumber(saved.y, player.y),
-      radius: cleanNumber(saved.radius, def.id === "wall" ? 31 : 27),
+      radius: cleanNumber(saved.radius, def.id === "wall" ? 31 : def.id === "base" ? 34 : 27),
       hp: clamp(cleanNumber(saved.hp, maxHp), 1, maxHp),
       maxHp,
+      healRadius: def.id === "base" ? cleanNumber(saved.healRadius, def.healRadius || 220) : null,
+      healRate: def.id === "base" ? cleanNumber(saved.healRate, def.healRate || 0.012) : null,
       attackTimer: 0,
       repairReservedBy: null,
     };
   }).filter(Boolean);
+  state.nextBuildingUid = Math.max(state.nextBuildingUid, maxUid + 1);
 }
 
 function restoreTraps(savedTraps = []) {
@@ -2444,6 +2618,7 @@ function restoreDefender(saved, index) {
     attackTimer: 0,
     attackFx: null,
     weaponId: saved.weaponId || def.weaponId || (attackType === "melee" ? "ironSword" : null),
+    assignedBaseUid: saved.assignedBaseUid || null,
   };
   syncAllyStats(ally);
   return ally;
@@ -2485,6 +2660,7 @@ function restoreWorker(saved, index) {
     fetchTarget: null,
     carryDrop: null,
     healRange: cleanNumber(saved.healRange, def.healRange || 0),
+    assignedBaseUid: saved.assignedBaseUid || null,
   };
   syncAllyStats(ally);
   return ally;
@@ -2513,6 +2689,7 @@ function clearRuntimeWorldState() {
   state.floatText = [];
   state.resourceSpawnTimer = 0;
   state.spawnTimer = 0;
+  state.nextBuildingUid = 1;
 }
 
 function loadGameSave(save) {
@@ -2938,29 +3115,38 @@ function equippedWeapon() {
 }
 
 function weaponDamage(weapon) {
-  return Math.round((weapon.damage + weapon.enchants.damage * 5) * (1 + (player.level - 1) * 0.045));
+  return Math.round((weapon.damage + enchantLevel(weapon, "damage") * 5) * (1 + (player.level - 1) * 0.045));
 }
 
 function weaponRate(weapon) {
-  return weapon.rate * (1 + weapon.enchants.speed * 0.11);
+  return weapon.rate * (1 + enchantLevel(weapon, "speed") * 0.11);
 }
 
 function weaponRange(weapon) {
   const meleeBonus = weapon.type === "近接" ? skillLevel("meleeRange") * 8 : 0;
   const rangedBonus = weapon.type === "遠距離" || weapon.type === "魔法" ? skillLevel("rangedRange") * 14 : 0;
-  return weapon.range + meleeBonus + rangedBonus;
+  const enchantBonus = enchantLevel(weapon, "range") * (weapon.type === "遠距離" || weapon.type === "魔法" ? 18 : 8);
+  return weapon.range + meleeBonus + rangedBonus + enchantBonus;
+}
+
+function weaponProjectileSpeed(weapon) {
+  return (weapon.projectileSpeed || 420) * (1 + enchantLevel(weapon, "projectileSpeed") * 0.12);
 }
 
 function weaponKnockback(weapon) {
-  return weapon.knockback + weapon.enchants.knockback * 30;
+  return weapon.knockback + enchantLevel(weapon, "knockback") * 30;
 }
 
 function weaponBleed(weapon) {
-  return clamp(weapon.bleedChance + weapon.enchants.bleed * 0.035, 0, 0.65);
+  return clamp(weapon.bleedChance + enchantLevel(weapon, "bleed") * 0.035, 0, 0.65);
 }
 
 function weaponLifesteal(weapon) {
-  return clamp(weapon.lifesteal + weapon.enchants.lifesteal * 0.025, 0, 0.45);
+  return clamp(weapon.lifesteal + enchantLevel(weapon, "lifesteal") * 0.025, 0, 0.45);
+}
+
+function weaponHoming(weapon) {
+  return enchantLevel(weapon, "homing");
 }
 
 function harvestRate(resource) {
@@ -3008,7 +3194,7 @@ function awardEnemyDefeat(enemy, source = null) {
   addParticles(enemy.x, enemy.y, def.color, 14, 135);
   gainXp(xp);
   if (isAlly(credit)) allyGainXp(credit, xp);
-  if (Math.random() < (def.meatChance || 0.45)) {
+  if (Math.random() < Math.min(0.95, (def.meatChance || 0.45) + skillLevel("lucky") * 0.025)) {
     const amount = Math.round(rand(def.meatAmount?.[0] || 1, def.meatAmount?.[1] || 1));
     spawnDrops("meat", amount, enemy.x, enemy.y);
     addFloatText("肉", enemy.x, enemy.y - 45, "#d96464");
@@ -3083,6 +3269,59 @@ function startAttackFx(actor, target, weaponId = "ironSword") {
   };
 }
 
+function enemyVelocityEstimate(enemy) {
+  if (!enemy.moving && enemy.chargeState !== "charge") return { x: 0, y: 0 };
+  if (enemy.chargeState === "charge" && enemy.chargeDir) {
+    return {
+      x: enemy.chargeDir.x * (enemy.chargeSpeed || enemy.speed || 0),
+      y: enemy.chargeDir.y * (enemy.chargeSpeed || enemy.speed || 0),
+    };
+  }
+  const dir = {
+    left: { x: -1, y: 0 },
+    right: { x: 1, y: 0 },
+    up: { x: 0, y: -1 },
+    down: { x: 0, y: 1 },
+  }[enemy.moveDir] || { x: 0, y: 0 };
+  return {
+    x: dir.x * (enemy.speed || 0),
+    y: dir.y * (enemy.speed || 0),
+  };
+}
+
+function aimPointForTarget(shooter, target, projectileSpeed, leadLevel = 0) {
+  if (leadLevel <= 0) return { x: target.x, y: target.y };
+  const distance = Math.hypot(target.x - shooter.x, target.y - shooter.y);
+  const travelTime = distance / Math.max(1, projectileSpeed);
+  const leadFactor = clamp(leadLevel * 0.08, 0, 0.82);
+  const velocity = enemyVelocityEstimate(target);
+  return {
+    x: target.x + velocity.x * travelTime * leadFactor,
+    y: target.y + velocity.y * travelTime * leadFactor,
+  };
+}
+
+function applyProjectileHoming(projectile, dt) {
+  const level = projectile.homing || 0;
+  if (level <= 0 || projectile.faction === "enemy") return;
+  const speed = Math.hypot(projectile.vx, projectile.vy) || projectile.speed || 1;
+  const target = findNearestEnemy(170 + level * 42, projectile);
+  if (!target) return;
+  const dx = target.x - projectile.x;
+  const dy = target.y - projectile.y;
+  const len = Math.hypot(dx, dy) || 1;
+  const turn = clamp(dt * (1.45 + level * 0.32), 0, 0.55);
+  const nx = projectile.vx / speed;
+  const ny = projectile.vy / speed;
+  const tx = dx / len;
+  const ty = dy / len;
+  const blendedX = nx + (tx - nx) * turn;
+  const blendedY = ny + (ty - ny) * turn;
+  const blendedLen = Math.hypot(blendedX, blendedY) || 1;
+  projectile.vx = (blendedX / blendedLen) * speed;
+  projectile.vy = (blendedY / blendedLen) * speed;
+}
+
 function playerAttack(dt) {
   const weapon = equippedWeapon();
   player.attackTimer -= dt;
@@ -3108,16 +3347,19 @@ function playerAttack(dt) {
     addParticles(target.x, target.y, "#f6f0db", 5, 80);
   } else {
     const color = weapon.type === "魔法" ? "#7dd3ff" : "#f1b84b";
+    const projectileSpeed = weaponProjectileSpeed(weapon);
     state.projectiles.push({
       x: player.x + player.facing.x * 22,
       y: player.y + player.facing.y * 22,
-      vx: player.facing.x * (weapon.projectileSpeed || 420),
-      vy: player.facing.y * (weapon.projectileSpeed || 420),
-      life: range / (weapon.projectileSpeed || 420),
+      vx: player.facing.x * projectileSpeed,
+      vy: player.facing.y * projectileSpeed,
+      life: range / projectileSpeed,
       radius: weapon.type === "魔法" ? 9 : 5,
       damage,
       color,
       splash: weapon.splash || 0,
+      speed: projectileSpeed,
+      homing: weaponHoming(weapon),
       owner: player,
       options,
     });
@@ -3126,6 +3368,7 @@ function playerAttack(dt) {
 
 function updateProjectiles(dt) {
   for (const projectile of state.projectiles) {
+    applyProjectileHoming(projectile, dt);
     projectile.x += projectile.vx * dt;
     projectile.y += projectile.vy * dt;
     projectile.life -= dt;
@@ -3256,26 +3499,64 @@ function updateTraps(dt) {
   state.traps = state.traps.filter((trap) => trap.life > 0 && trap.durability > 0);
 }
 
+function healTargetFromBase(base, target, dt) {
+  if (!target || target.hp <= 0 || target.hp >= target.maxHp) return false;
+  if (Math.hypot(target.x - base.x, target.y - base.y) > baseRadius(base)) return false;
+  const rate = base.healRate || buildDefById("base")?.healRate || 0.012;
+  const healed = Math.min(target.maxHp - target.hp, Math.max(0.55, target.maxHp * rate) * dt);
+  target.hp += healed;
+  return healed > 0;
+}
+
+function updateBaseHealing(dt) {
+  for (const base of baseBuildings()) {
+    let healedAny = false;
+    const targets = [
+      player,
+      ...state.defenders,
+      ...state.workers,
+      ...state.buildings,
+    ];
+    for (const target of targets) {
+      if (healTargetFromBase(base, target, dt)) healedAny = true;
+    }
+    base.healPulse = healedAny ? (base.healPulse || 0) + dt * 5 : 0;
+    base.healFxTimer = (base.healFxTimer || 0) - dt;
+    if (healedAny && base.healFxTimer <= 0) {
+      base.healFxTimer = 0.55;
+      addParticles(base.x + rand(-base.radius, base.radius), base.y + rand(-base.radius, base.radius), "#7dd3ff", 3, 45);
+    }
+  }
+}
+
+function buildingProjectileSpeed(baseSpeed) {
+  return baseSpeed * allyShotSpeedMultiplier();
+}
+
 function updateBuildings(dt) {
+  updateBaseHealing(dt);
   for (const building of state.buildings) {
     building.attackTimer -= dt;
     if (building.id !== "tower" || building.attackTimer > 0) continue;
     const target = findNearestEnemy(260, building);
     if (!target) continue;
     building.attackTimer = 0.9;
-    const dx = target.x - building.x;
-    const dy = target.y - building.y;
+    const speed = buildingProjectileSpeed(430);
+    const aim = aimPointForTarget(building, target, speed, skillLevel("predictiveShot"));
+    const dx = aim.x - building.x;
+    const dy = aim.y - building.y;
     const len = Math.hypot(dx, dy) || 1;
     state.projectiles.push({
       x: building.x,
       y: building.y - 22,
-      vx: (dx / len) * 430,
-      vy: (dy / len) * 430,
-      life: 0.72,
+      vx: (dx / len) * speed,
+      vy: (dy / len) * speed,
+      life: 260 / speed,
       radius: 5,
       damage: 16,
       color: "#f1b84b",
       splash: 0,
+      owner: building,
       options: { knockback: 45, bleedChance: 0, lifesteal: 0 },
     });
   }
@@ -3301,13 +3582,15 @@ function defenderProtectionScore(enemy, defender) {
 }
 
 function findDefenderHuntTarget(defender, homeX, homeY) {
-  const attackRange = defender.range || 96;
+  const attackRange = (defender.range || 96) * allyRangeMultiplier();
   const melee = defender.attackType === "melee";
-  const homeLeash = melee ? 560 : attackRange + 90;
+  const base = assignedBase(defender);
+  const homeLeash = base ? baseRadius(base) : melee ? 560 : attackRange + 90;
   let best = null;
   let bestScore = Infinity;
 
   for (const enemy of state.enemies) {
+    if (!withinAssignedBase(defender, enemy)) continue;
     const protectionScore = defenderProtectionScore(enemy, defender);
     if (!Number.isFinite(protectionScore)) continue;
 
@@ -3331,19 +3614,20 @@ function updateDefenders(dt) {
   for (const defender of state.defenders) {
     syncAllyStats(defender);
     defender.attackTimer -= dt;
-    const homeX = player.x + defender.homeOffset.x;
-    const homeY = player.y + defender.homeOffset.y;
+    const home = allyHomePosition(defender);
+    const homeX = home.x;
+    const homeY = home.y;
     const homeDistance = Math.hypot(homeX - defender.x, homeY - defender.y);
-    const escortLeash = defender.attackType === "melee" ? 520 : 230;
+    const escortLeash = home.base ? baseRadius(home.base) + 60 : defender.attackType === "melee" ? 520 : 230;
     const target = homeDistance <= escortLeash
-      ? findDefenderHuntTarget(defender, homeX, homeY) || findNearestEnemy(defender.range || 96, defender)
+      ? findDefenderHuntTarget(defender, homeX, homeY) || (home.base ? null : findNearestEnemy((defender.range || 96) * allyRangeMultiplier(), defender))
       : null;
     if (target) {
       const dx = target.x - defender.x;
       const dy = target.y - defender.y;
       const len = Math.hypot(dx, dy) || 1;
       defender.moveDir = directionFromVector(dx, dy, defender.moveDir);
-      const attackRange = defender.range || 96;
+      const attackRange = (defender.range || 96) * allyRangeMultiplier();
       if (len > attackRange && defender.attackType === "melee") {
         moveAllyToward(defender, target.x, target.y, dt, attackRange * 0.78);
         continue;
@@ -3361,13 +3645,17 @@ function updateDefenders(dt) {
           damageEnemy(target, allyDamage(defender) || 10, defender, options);
           addParticles(target.x, target.y, "#f6f0db", 5, 80);
         } else {
-          const speed = defender.projectileSpeed || 420;
+          const speed = (defender.projectileSpeed || 420) * allyShotSpeedMultiplier();
+          const aim = aimPointForTarget(defender, target, speed, skillLevel("predictiveShot"));
+          const aimDx = aim.x - defender.x;
+          const aimDy = aim.y - defender.y;
+          const aimLen = Math.hypot(aimDx, aimDy) || 1;
           state.projectiles.push({
-            x: defender.x + (dx / len) * 18,
-            y: defender.y + (dy / len) * 18,
-            vx: (dx / len) * speed,
-            vy: (dy / len) * speed,
-            life: (defender.range || 220) / speed,
+            x: defender.x + (aimDx / aimLen) * 18,
+            y: defender.y + (aimDy / aimLen) * 18,
+            vx: (aimDx / aimLen) * speed,
+            vy: (aimDy / aimLen) * speed,
+            life: attackRange / speed,
             radius: defender.attackType === "magic" ? 8 : 5,
             damage: allyDamage(defender) || 10,
             color: defender.attackType === "magic" ? "#7dd3ff" : "#f1b84b",
@@ -3388,9 +3676,12 @@ function updateDefenders(dt) {
 function findNearestResourceForWorker(worker) {
   let best = null;
   let bestDistance = worker.searchRadius || 380;
+  const home = allyHomePosition(worker);
+  const center = home.base || player;
+  const allowedRadius = home.base ? baseRadius(home.base) : worker.searchRadius || 380;
   for (const resource of state.resources) {
     if (!worker.targets.includes(resource.type)) continue;
-    if (Math.hypot(resource.x - player.x, resource.y - player.y) > (worker.searchRadius || 380)) continue;
+    if (Math.hypot(resource.x - center.x, resource.y - center.y) > allowedRadius) continue;
     const d = Math.hypot(resource.x - worker.x, resource.y - worker.y);
     if (d < bestDistance) {
       best = resource;
@@ -3431,16 +3722,47 @@ function repairCost(building, worker) {
 
 function findNearestDamagedBuildingForRepairer(worker) {
   let best = null;
-  let bestDistance = worker.searchRadius || 520;
+  let bestScore = Infinity;
+  const home = allyHomePosition(worker);
+  const center = home.base || worker;
+  const allowedRadius = home.base ? baseRadius(home.base) : worker.searchRadius || 520;
   for (const building of state.buildings) {
     if (building.hp >= building.maxHp || building.repairReservedBy) continue;
+    if (Math.hypot(building.x - center.x, building.y - center.y) > allowedRadius) continue;
     const d = Math.hypot(building.x - worker.x, building.y - worker.y);
-    if (d < bestDistance) {
+    const ratio = building.hp / building.maxHp;
+    const score = ratio * 900 + d * 0.22 + (ratio <= 0.5 ? -420 : 0);
+    if (score < bestScore) {
       best = building;
-      bestDistance = d;
+      bestScore = score;
     }
   }
   return best;
+}
+
+function findCriticalRepairTarget(worker, currentTarget) {
+  const currentRatio = currentTarget ? currentTarget.hp / currentTarget.maxHp : 1;
+  let best = null;
+  let bestRatio = currentRatio;
+  const home = allyHomePosition(worker);
+  const center = home.base || worker;
+  const allowedRadius = home.base ? baseRadius(home.base) : worker.searchRadius || 520;
+  for (const building of state.buildings) {
+    if (building === currentTarget || building.hp >= building.maxHp || building.repairReservedBy) continue;
+    if (Math.hypot(building.x - center.x, building.y - center.y) > allowedRadius) continue;
+    const ratio = building.hp / building.maxHp;
+    if (ratio <= 0.5 && ratio < bestRatio - 0.04) {
+      best = building;
+      bestRatio = ratio;
+    }
+  }
+  return best;
+}
+
+function cancelRepairJob(worker) {
+  if (worker.repairJob?.target) worker.repairJob.target.repairReservedBy = null;
+  worker.repairJob = null;
+  worker.repairTarget = null;
 }
 
 function spendRepairCostTo(job, fraction) {
@@ -3459,16 +3781,23 @@ function updateRepairer(worker, dt) {
   syncAllyStats(worker);
   const job = worker.repairJob;
   if (job && (!state.buildings.includes(job.target) || job.target.hp >= job.target.maxHp)) {
-    if (job.target) job.target.repairReservedBy = null;
-    worker.repairJob = null;
-    worker.repairTarget = null;
+    cancelRepairJob(worker);
+  }
+  if (worker.repairJob) {
+    const urgent = findCriticalRepairTarget(worker, worker.repairJob.target);
+    if (urgent) {
+      cancelRepairJob(worker);
+      worker.repairTarget = urgent;
+      addFloatText("緊急修理へ", worker.x, worker.y - 45, "#f1b84b");
+    }
   }
 
   if (!worker.repairJob) {
     const target = findNearestDamagedBuildingForRepairer(worker);
     worker.repairTarget = target;
     if (!target) {
-      moveAllyToward(worker, player.x + worker.homeOffset.x, player.y + worker.homeOffset.y, dt, 12);
+      const home = allyHomePosition(worker);
+      moveAllyToward(worker, home.x, home.y, dt, 12);
       return;
     }
     if (!moveAllyToward(worker, target.x, target.y, dt, target.radius + worker.radius + 14)) return;
@@ -3520,9 +3849,7 @@ function updateRepairer(worker, dt) {
   if (activeJob.elapsed >= activeJob.duration) {
     if (!spendRepairCostTo(activeJob, 1)) return;
     target.hp = target.maxHp;
-    target.repairReservedBy = null;
-    worker.repairJob = null;
-    worker.repairTarget = null;
+    cancelRepairJob(worker);
     allyGainXp(worker, 60);
     addFloatText("修理完了", target.x, target.y - 58, "#65c47b");
     addParticles(target.x, target.y, "#65c47b", 18, 120);
@@ -3531,6 +3858,7 @@ function updateRepairer(worker, dt) {
 
 function findHealerTarget(healer) {
   const screenRange = Math.max(520, Math.max(state.width, state.height) * 0.62);
+  const home = allyHomePosition(healer);
   const candidates = [
     player,
     ...state.defenders,
@@ -3539,7 +3867,11 @@ function findHealerTarget(healer) {
   let best = null;
   let bestScore = Infinity;
   for (const target of candidates) {
-    if (Math.hypot(target.x - player.x, target.y - player.y) > screenRange) continue;
+    if (home.base) {
+      if (Math.hypot(target.x - home.base.x, target.y - home.base.y) > baseRadius(home.base)) continue;
+    } else if (Math.hypot(target.x - player.x, target.y - player.y) > screenRange) {
+      continue;
+    }
     const ratio = target.hp / target.maxHp;
     const distance = Math.hypot(target.x - healer.x, target.y - healer.y);
     const score = ratio * 1000 + distance * 0.16;
@@ -3564,7 +3896,8 @@ function updateHealer(healer, dt) {
   healer.healTarget = target;
   if (!target) {
     healer.healPulse = 0;
-    moveAllyToward(healer, player.x + healer.homeOffset.x, player.y + healer.homeOffset.y, dt, 12);
+    const home = allyHomePosition(healer);
+    moveAllyToward(healer, home.x, home.y, dt, 12);
     return;
   }
 
@@ -3608,8 +3941,12 @@ function updateHealer(healer, dt) {
 function findNearestDropForDog(dog) {
   let best = null;
   let bestDistance = dog.searchRadius || 620;
+  const home = allyHomePosition(dog);
+  const center = home.base || dog;
+  const allowedRadius = home.base ? baseRadius(home.base) : dog.searchRadius || 620;
   for (const drop of state.drops) {
     if (drop.collected || drop.pickupDelay > 0) continue;
+    if (Math.hypot(drop.x - center.x, drop.y - center.y) > allowedRadius) continue;
     const d = Math.hypot(drop.x - dog.x, drop.y - dog.y);
     if (d < bestDistance) {
       best = drop;
@@ -3640,7 +3977,10 @@ function updateDog(dog, dt) {
   syncAllyStats(dog);
   if (dog.carryDrop) {
     dog.fetchTarget = null;
-    const arrived = moveAllyToward(dog, player.x + dog.homeOffset.x * 0.25, player.y + dog.homeOffset.y * 0.25, dt, dog.radius + player.radius + 20);
+    const home = allyHomePosition(dog);
+    const deliverX = home.base ? home.x : player.x + dog.homeOffset.x * 0.25;
+    const deliverY = home.base ? home.y : player.y + dog.homeOffset.y * 0.25;
+    const arrived = moveAllyToward(dog, deliverX, deliverY, dt, dog.radius + (home.base?.radius || player.radius) + 20);
     if (arrived) {
       collectDrop({
         dropType: dog.carryDrop.dropType,
@@ -3670,9 +4010,8 @@ function updateDog(dog, dt) {
   }
 
   dog.fetchTarget = null;
-  const homeX = player.x + dog.homeOffset.x;
-  const homeY = player.y + dog.homeOffset.y;
-  moveAllyToward(dog, homeX, homeY, dt, 12);
+  const home = allyHomePosition(dog);
+  moveAllyToward(dog, home.x, home.y, dt, 12);
 }
 
 function finishWorkerHarvest(worker, resource) {
@@ -3702,21 +4041,25 @@ function updateWorkers(dt) {
     if (!state.resources.includes(worker.harvestTarget)) {
       worker.harvestTarget = null;
     }
-    if (worker.harvestTarget && Math.hypot(worker.harvestTarget.x - player.x, worker.harvestTarget.y - player.y) > (worker.searchRadius || 380)) {
+    if (worker.harvestTarget && !withinAssignedBase(worker, worker.harvestTarget)) {
+      worker.harvestTarget = null;
+    }
+    if (!assignedBase(worker) && worker.harvestTarget && Math.hypot(worker.harvestTarget.x - player.x, worker.harvestTarget.y - player.y) > (worker.searchRadius || 380)) {
       worker.harvestTarget = null;
     }
 
-    const tooFarFromPlayer = Math.hypot(worker.x - player.x, worker.y - player.y) > (worker.leash || 430);
-    const target = tooFarFromPlayer ? null : worker.harvestTarget || findNearestResourceForWorker(worker);
+    const home = allyHomePosition(worker);
+    const tooFarFromHome = Math.hypot(worker.x - home.x, worker.y - home.y) > (home.base ? baseRadius(home.base) + 95 : worker.leash || 430);
+    const target = tooFarFromHome ? null : worker.harvestTarget || findNearestResourceForWorker(worker);
     worker.harvestTarget = target;
 
     if (!target) {
       worker.harvesting = false;
-      const dx = player.x - worker.x + worker.homeOffset.x;
-      const dy = player.y - worker.y + worker.homeOffset.y;
+      const dx = home.x - worker.x;
+      const dy = home.y - worker.y;
       const len = Math.hypot(dx, dy);
       if (len > 12) {
-        moveAllyToward(worker, player.x + worker.homeOffset.x, player.y + worker.homeOffset.y, dt, 12);
+        moveAllyToward(worker, home.x, home.y, dt, 12);
       } else {
         worker.moving = false;
       }
@@ -4149,13 +4492,16 @@ function placeBuild(def) {
 
   if (def.type === "building") {
     state.buildings.push({
+      uid: state.nextBuildingUid++,
       id: def.id,
       label: def.label,
       x,
       y,
-      radius: def.id === "wall" ? 31 : 27,
+      radius: def.id === "wall" ? 31 : def.id === "base" ? 34 : 27,
       hp: def.hp,
       maxHp: def.hp,
+      healRadius: def.id === "base" ? def.healRadius || 220 : null,
+      healRate: def.id === "base" ? def.healRate || 0.012 : null,
       attackTimer: 0,
     });
     showToast(`${def.label}を建てました`);
@@ -4261,13 +4607,17 @@ function enchantWeapon(key) {
     showToast("このエンチャントはまだ解放されていません");
     return;
   }
-  const current = weapon.enchants[key];
+  if (!enchantAppliesToWeapon(def, weapon)) {
+    showToast(`${weapon.name}には${def.label}を追加できません`);
+    return;
+  }
+  const current = enchantLevel(weapon, key);
   const cost = scaledCost(def.cost, current);
   if (!pay(cost)) {
     showToast(`${def.label}強化には ${costText(cost)} が必要です`);
     return;
   }
-  weapon.enchants[key] += 1;
+  weapon.enchants[key] = current + 1;
   showToast(`${weapon.name}の${def.label}が +${weapon.enchants[key]} になりました`);
   renderStaticUi();
 }
@@ -4313,20 +4663,20 @@ function renderStaticUi() {
   });
 
   ui.enchantButtons.innerHTML = "";
-  const visibleEnchants = unlockedEnchants();
   const enchantWeaponTarget = equippedWeapon();
+  const visibleEnchants = unlockedEnchants().filter((def) => enchantAppliesToWeapon(def, enchantWeaponTarget));
   if (ui.enchantDescription) {
     ui.enchantDescription.hidden = visibleEnchants.length === 0;
     ui.enchantDescription.textContent = visibleEnchants.length > 0
       ? `エンチャント：${enchantWeaponTarget.name}に以下の効果を追加します`
-      : "";
+      : `${enchantWeaponTarget.name}に追加できるエンチャントはまだありません`;
   }
   if (visibleEnchants.length === 0) {
-    ui.enchantButtons.innerHTML = `<div class="empty-panel">レベルアップ報酬でエンチャントを解放できます</div>`;
+    ui.enchantButtons.innerHTML = `<div class="empty-panel">この武器に追加できるエンチャントはありません</div>`;
   }
   visibleEnchants.forEach((def) => {
     const weapon = enchantWeaponTarget;
-    const current = weapon.enchants[def.key];
+    const current = enchantLevel(weapon, def.key);
     const cost = scaledCost(def.cost, current);
     const button = document.createElement("button");
     button.type = "button";
@@ -4357,7 +4707,11 @@ function renderStaticUi() {
     button.innerHTML = actionButtonMarkup({
       icon: def.icon,
       label: def.label,
-      detail: def.type === "trap" ? `耐久 ${def.durability} / ${def.life}秒` : `HP ${def.hp}`,
+      detail: def.type === "trap"
+        ? `耐久 ${def.durability} / ${def.life}秒`
+        : def.id === "base"
+          ? `HP ${def.hp} / 回復範囲 ${def.healRadius}px`
+          : `HP ${def.hp}`,
       cost: def.cost,
     });
     setActionButtonAffordability(button, def.cost);
@@ -4481,6 +4835,28 @@ function drawGround() {
         );
       }
     }
+  }
+}
+
+function drawBaseAreas() {
+  for (const base of baseBuildings()) {
+    const p = worldToScreen(base);
+    const radius = baseRadius(base);
+    const pulse = 1 + Math.sin(state.time * 3.2) * 0.015;
+    ctx.save();
+    ctx.strokeStyle = "rgba(125,211,255,0.42)";
+    ctx.fillStyle = "rgba(125,211,255,0.055)";
+    ctx.lineWidth = 2;
+    ctx.beginPath();
+    ctx.arc(p.x, p.y, radius * pulse, 0, TAU);
+    ctx.fill();
+    ctx.stroke();
+    ctx.setLineDash([8, 9]);
+    ctx.strokeStyle = "rgba(246,240,219,0.18)";
+    ctx.beginPath();
+    ctx.arc(p.x, p.y, radius * 0.66, 0, TAU);
+    ctx.stroke();
+    ctx.restore();
   }
 }
 
@@ -4908,6 +5284,26 @@ function drawBuilding(building) {
     ctx.fillRect(-34, -20, 68, 42);
     ctx.fillStyle = "#b29a74";
     for (let i = -28; i <= 22; i += 17) ctx.fillRect(i, -16, 11, 34);
+  } else if (building.id === "base") {
+    ctx.fillStyle = "#4a3428";
+    ctx.fillRect(-30, -10, 60, 42);
+    ctx.fillStyle = "#9b6f48";
+    ctx.fillRect(-22, -24, 44, 42);
+    ctx.fillStyle = "#d69b48";
+    ctx.beginPath();
+    ctx.moveTo(-34, -22);
+    ctx.lineTo(0, -54);
+    ctx.lineTo(34, -22);
+    ctx.closePath();
+    ctx.fill();
+    ctx.fillStyle = "#20323a";
+    ctx.fillRect(-9, 2, 18, 30);
+    ctx.fillStyle = "#7dd3ff";
+    ctx.globalAlpha = 0.72 + Math.sin(state.time * 4) * 0.18;
+    ctx.beginPath();
+    ctx.arc(0, -24, 8, 0, TAU);
+    ctx.fill();
+    ctx.globalAlpha = 1;
   } else {
     ctx.fillStyle = "#765234";
     ctx.fillRect(-15, -8, 30, 48);
@@ -4950,6 +5346,12 @@ function drawAllyStatus(ally, x, y, width = 40) {
   ctx.fillRect(x - width / 2, barY + 6, width, 3);
   ctx.fillStyle = "#7dd3ff";
   ctx.fillRect(x - width / 2, barY + 6, width * xpRatio, 3);
+  if (assignedBase(ally)) {
+    ctx.fillStyle = "#7dd3ff";
+    ctx.fillRect(x + width / 2 + 4, barY - 1, 7, 7);
+    ctx.fillStyle = "#20323a";
+    ctx.fillRect(x + width / 2 + 6, barY + 1, 3, 5);
+  }
   ctx.restore();
 }
 
@@ -5373,6 +5775,7 @@ function drawHarvestRange() {
 
 function draw() {
   drawGround();
+  drawBaseAreas();
   drawHarvestRange();
 
   const drawables = [
@@ -5394,7 +5797,7 @@ function draw() {
     else if (item.role === "dog") drawDog(item);
     else if (item.role === "lumberjack" || item.role === "miner" || item.role === "repairer" || item.role === "healer") drawWorker(item);
     else if ("maxDurability" in item) drawTrap(item);
-    else if (item.id === "wall" || item.id === "tower") drawBuilding(item);
+    else if ("maxHp" in item && buildDefById(item.id)) drawBuilding(item);
     else if ("damage" in item && "bleed" in item) drawEnemy(item);
   }
 
@@ -5444,6 +5847,27 @@ function updatePointerVector(clientX, clientY) {
   ui.joystickKnob.style.transform = `translate(${nx * Math.min(len, max)}px, ${ny * Math.min(len, max)}px)`;
 }
 
+function allyAtScreenPoint(clientX, clientY) {
+  const point = screenToWorld(clientX, clientY);
+  let best = null;
+  let bestDistance = 32;
+  for (const ally of [...state.defenders, ...state.workers]) {
+    const d = Math.hypot(ally.x - point.x, ally.y - point.y);
+    if (d < bestDistance) {
+      best = ally;
+      bestDistance = d;
+    }
+  }
+  return best;
+}
+
+function handleWorldTap(clientX, clientY) {
+  const ally = allyAtScreenPoint(clientX, clientY);
+  if (!ally) return false;
+  assignAllyToNearestBase(ally);
+  return true;
+}
+
 function startPointer(event) {
   if (state.menu.open || state.skillChoice.open || event.button !== 0 || event.target.closest(".hud")) return;
   canvas.setPointerCapture(event.pointerId);
@@ -5453,6 +5877,7 @@ function startPointer(event) {
   state.pointer.startY = event.clientY;
   state.pointer.x = event.clientX;
   state.pointer.y = event.clientY;
+  state.pointer.startedAt = now();
   ui.joystick.hidden = false;
   ui.joystick.style.left = `${event.clientX}px`;
   ui.joystick.style.top = `${event.clientY}px`;
@@ -5468,8 +5893,14 @@ function movePointer(event) {
 
 function endPointer(event) {
   if (!state.pointer.active || event.pointerId !== state.pointer.id) return;
+  const tapDistance = Math.hypot(event.clientX - state.pointer.startX, event.clientY - state.pointer.startY);
+  const tapDuration = now() - state.pointer.startedAt;
+  if (tapDistance < 10 && tapDuration < 0.32) {
+    handleWorldTap(event.clientX, event.clientY);
+  }
   state.pointer.active = false;
   state.pointer.id = null;
+  state.pointer.startedAt = 0;
   state.pointer.vector.x = 0;
   state.pointer.vector.y = 0;
   ui.joystick.hidden = true;
