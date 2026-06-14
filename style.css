@@ -296,6 +296,53 @@ button[disabled] {
   line-height: 1;
 }
 
+.save-button {
+  right: 82px;
+  bottom: 14px;
+  z-index: 6;
+  display: grid;
+  place-items: center;
+  width: 64px;
+  height: 44px;
+  min-height: 44px;
+  padding: 0;
+  border-color: rgba(125, 211, 255, 0.36);
+  background: rgba(19, 25, 29, 0.84);
+}
+
+.save-button span {
+  color: #b9e8ff;
+  font-size: 13px;
+  font-weight: 900;
+  letter-spacing: 0;
+}
+
+.save-drop-overlay {
+  position: fixed;
+  inset: 18px;
+  z-index: 30;
+  display: grid;
+  place-content: center;
+  gap: 10px;
+  border: 2px dashed rgba(125, 211, 255, 0.78);
+  border-radius: 8px;
+  background: rgba(9, 13, 17, 0.74);
+  color: var(--ink);
+  text-align: center;
+  pointer-events: none;
+  backdrop-filter: blur(8px);
+}
+
+.save-drop-overlay strong {
+  color: #b9e8ff;
+  font-size: 24px;
+}
+
+.save-drop-overlay span {
+  color: var(--muted);
+  font-size: 13px;
+}
+
 .weapon-list {
   display: grid;
   gap: 7px;
@@ -1112,6 +1159,22 @@ button[disabled] {
     height: 54px;
     min-height: 54px;
     padding: 0;
+  }
+
+  .save-button {
+    right: 10px;
+    bottom: 146px;
+    width: 54px;
+    height: 40px;
+    min-height: 40px;
+  }
+
+  .save-button span {
+    font-size: 12px;
+  }
+
+  .save-drop-overlay {
+    inset: 10px;
   }
 
   .toast {

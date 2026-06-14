@@ -4,7 +4,7 @@
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <title>Frontier Ring</title>
-    <link rel="stylesheet" href="style.css?v=20260614-124020" />
+    <link rel="stylesheet" href="style.css?v=20260614-233235" />
     <style>
       [hidden] {
         display: none !important;
@@ -43,6 +43,10 @@
           <strong id="equippedWeaponName">ナイフ</strong>
           <small id="equippedWeaponMeta">武器を選択</small>
         </span>
+      </button>
+
+      <button id="saveButton" class="hud save-button" type="button" aria-label="セーブJSONを書き出す">
+        <span>保存</span>
       </button>
 
       <button id="quickMenuButton" class="hud quick-menu-button" type="button" aria-label="メニューを開く">
@@ -116,10 +120,15 @@
         <div id="joystickKnob"></div>
       </div>
 
+      <div id="saveDropOverlay" class="save-drop-overlay" hidden>
+        <strong>セーブを読み込み</strong>
+        <span>JSON ファイルをここにドロップ</span>
+      </div>
+
       <div id="eventAlert" class="event-alert" hidden></div>
       <div id="toast" class="toast" hidden></div>
     </main>
 
-    <script src="game.js?v=20260614-124020"></script>
+    <script src="game.js?v=20260614-233235"></script>
   </body>
 </html>

@@ -17,6 +17,8 @@ const ui = {
   equippedWeaponIcon: document.querySelector("#equippedWeaponIcon"),
   equippedWeaponName: document.querySelector("#equippedWeaponName"),
   equippedWeaponMeta: document.querySelector("#equippedWeaponMeta"),
+  saveButton: document.querySelector("#saveButton"),
+  saveDropOverlay: document.querySelector("#saveDropOverlay"),
   quickMenuButton: document.querySelector("#quickMenuButton"),
   weaponList: document.querySelector("#weaponList"),
   enchantButtons: document.querySelector("#enchantButtons"),
@@ -55,6 +57,7 @@ const clamp = (value, min, max) => Math.max(min, Math.min(max, value));
 const dist = (a, b) => Math.hypot(a.x - b.x, a.y - b.y);
 const now = () => performance.now() / 1000;
 const resourceKeys = ["wood", "stone", "gold", "iron", "meat", "starstone"];
+const SAVE_VERSION = 1;
 const PLAYER_XP_START = 24;
 const PLAYER_XP_EARLY_TARGET = 150;
 const PLAYER_XP_EARLY_TARGET_LEVEL = 20;
@@ -230,6 +233,14 @@ const customSprites = {
       width: 56,
       height: 44,
     },
+    boarBoss: {
+      down: [box(0, 320, 64, 64), box(64, 320, 64, 64), box(128, 320, 64, 64)],
+      right: [box(192, 320, 64, 64), box(256, 320, 64, 64), box(320, 320, 64, 64)],
+      up: [box(384, 320, 64, 64), box(448, 320, 64, 64), box(512, 320, 64, 64)],
+      sideFaces: "right",
+      width: 92,
+      height: 70,
+    },
   },
   resources: {
     iron: { frame: box(0, 256, 64, 64), width: 58, height: 54 },
@@ -290,6 +301,7 @@ const state = {
   height: 0,
   time: 0,
   last: now(),
+  terrainSeed: 0,
   camera: { x: 0, y: 0 },
   keys: new Set(),
   pointer: {
@@ -647,7 +659,7 @@ const weapons = [
     name: "狩人の弓",
     type: "遠距離",
     damage: 13,
-    range: 310,
+    range: 430,
     rate: 1.15,
     knockback: 58,
     bleedChance: 0.06,
@@ -967,6 +979,24 @@ const enemyDefs = {
     weight: 4,
     behavior: "boar",
   },
+  boarBoss: {
+    id: "boarBoss",
+    label: "暴れ大イノシシ",
+    color: "#8a5a3a",
+    accent: "#f5d8b6",
+    radius: 34,
+    hp: 520,
+    speed: [36, 48],
+    damage: 26,
+    attackCooldown: 1,
+    chargeSpeed: 335,
+    xp: 155,
+    meatChance: 1,
+    meatAmount: [6, 10],
+    weight: 1,
+    behavior: "boar",
+    boss: true,
+  },
   goblinArcher: {
     id: "goblinArcher",
     label: "ゴブリン弓兵",
@@ -1080,7 +1110,7 @@ function screenToWorld(x, y) {
 }
 
 function hash2(x, y) {
-  const value = Math.sin(x * 127.1 + y * 311.7) * 43758.5453123;
+  const value = Math.sin(x * 127.1 + y * 311.7 + (state.terrainSeed || 0) * 0.000137) * 43758.5453123;
   return value - Math.floor(value);
 }
 
@@ -1748,9 +1778,7 @@ function selectReward(reward) {
   }
   if (reward.kind === "weapon") {
     setUnlocked("weapons", reward.key);
-    const index = weapons.findIndex((weapon) => weapon.id === reward.key);
-    if (index >= 0) equippedIndex = index;
-    message = `${reward.name}を入手しました`;
+    message = `${reward.name}を入手しました。装備変更は武器メニューから行えます`;
   }
   if (reward.kind === "enchant") {
     setUnlocked("enchants", reward.key);
@@ -2145,6 +2173,422 @@ function maintainAmbientResources(dt) {
   }
 }
 
+function seedAmbientResourcesAroundPlayer() {
+  for (let i = 0; i < 34; i += 1) spawnResource("wood", true);
+  for (let i = 0; i < 25; i += 1) spawnResource("stone", true);
+  for (let i = 0; i < 16; i += 1) spawnResource("gold", true);
+  for (let i = 0; i < 18; i += 1) spawnResource("iron", true);
+  spawnResource("starstone", false);
+}
+
+function cleanNumber(value, fallback = 0) {
+  const number = Number(value);
+  return Number.isFinite(number) ? number : fallback;
+}
+
+function cleanInt(value, fallback = 0) {
+  return Math.floor(cleanNumber(value, fallback));
+}
+
+function clonePlain(value) {
+  return JSON.parse(JSON.stringify(value));
+}
+
+function resourceSnapshot() {
+  return Object.fromEntries(resourceKeys.map((key) => [key, Math.max(0, cleanInt(player[key], 0))]));
+}
+
+function saveAlly(ally) {
+  return {
+    id: ally.id,
+    label: ally.label,
+    role: ally.role,
+    kind: ally.kind || "defender",
+    x: Math.round(ally.x),
+    y: Math.round(ally.y),
+    radius: ally.radius,
+    hp: Math.round(ally.hp),
+    maxHp: Math.round(ally.maxHp),
+    baseMaxHp: Math.round(ally.baseMaxHp || ally.maxHp || ally.hp || 1),
+    baseSpeed: ally.baseSpeed || ally.speed || 150,
+    level: ally.level || 1,
+    xp: Math.floor(ally.xp || 0),
+    xpNext: Math.floor(ally.xpNext || 54),
+    homeOffset: ally.homeOffset ? { x: Math.round(ally.homeOffset.x), y: Math.round(ally.homeOffset.y) } : null,
+    attackType: ally.attackType || null,
+    baseDamage: ally.baseDamage || null,
+    range: ally.range || null,
+    rate: ally.rate || null,
+    knockback: ally.knockback || null,
+    projectileSpeed: ally.projectileSpeed || null,
+    splash: ally.splash || null,
+    weaponId: ally.weaponId || null,
+    targets: Array.isArray(ally.targets) ? [...ally.targets] : [],
+    searchRadius: ally.searchRadius || null,
+    leash: ally.leash || null,
+    healRange: ally.healRange || null,
+  };
+}
+
+function createSaveData() {
+  return {
+    kind: "frontier-ring-save",
+    version: SAVE_VERSION,
+    savedAt: new Date().toISOString(),
+    terrainSeed: state.terrainSeed || 0,
+    wave: {
+      index: state.wave.index,
+    },
+    player: {
+      x: Math.round(player.x),
+      y: Math.round(player.y),
+      hp: Math.round(player.hp),
+      maxHp: Math.round(player.maxHp),
+      level: player.level,
+      xp: Math.floor(player.xp),
+      xpNext: player.xpNext,
+      resources: resourceSnapshot(),
+      skills: clonePlain(player.skills),
+      unlocks: clonePlain(player.unlocks),
+      axeLevel: player.axeLevel,
+      pickaxeLevel: player.pickaxeLevel,
+      equippedWeaponId: equippedWeapon().id,
+      weaponEnchants: weapons.map((weapon) => ({
+        id: weapon.id,
+        enchants: clonePlain(weapon.enchants),
+      })),
+    },
+    buildings: state.buildings.map((building) => ({
+      id: building.id,
+      label: building.label,
+      x: Math.round(building.x),
+      y: Math.round(building.y),
+      radius: building.radius,
+      hp: Math.round(building.hp),
+      maxHp: Math.round(building.maxHp),
+    })),
+    traps: state.traps.map((trap) => ({
+      id: trap.id,
+      label: trap.label,
+      x: Math.round(trap.x),
+      y: Math.round(trap.y),
+      radius: trap.radius,
+      life: trap.life,
+      maxLife: trap.maxLife,
+      durability: trap.durability,
+      maxDurability: trap.maxDurability,
+      cooldown: trap.cooldown || 0,
+      triggered: Boolean(trap.triggered),
+    })),
+    allies: {
+      defenders: state.defenders.map(saveAlly),
+      workers: state.workers.map(saveAlly),
+    },
+  };
+}
+
+function downloadSaveFile() {
+  const save = createSaveData();
+  const stamp = save.savedAt.replace(/[:.]/g, "-");
+  const blob = new Blob([JSON.stringify(save, null, 2)], { type: "application/json" });
+  const url = URL.createObjectURL(blob);
+  const link = document.createElement("a");
+  link.href = url;
+  link.download = `frontier-ring-wave${save.wave.index}-${stamp}.json`;
+  document.body.appendChild(link);
+  link.click();
+  link.remove();
+  window.setTimeout(() => URL.revokeObjectURL(url), 5000);
+  showToast("セーブJSONを書き出しました");
+}
+
+function restoreUnlocks(savedUnlocks = {}) {
+  const unlocks = savedUnlocks || {};
+  player.unlocks = {
+    weapons: { knife: true },
+    enchants: {},
+    builds: {},
+    hires: {},
+  };
+  for (const kind of ["weapons", "enchants", "builds", "hires"]) {
+    const bucket = unlocks[kind] || {};
+    for (const [key, value] of Object.entries(bucket)) {
+      if (value) setUnlocked(kind, key);
+    }
+  }
+  player.unlocks.weapons.knife = true;
+}
+
+function restoreSkills(savedSkills = {}) {
+  const skills = savedSkills || {};
+  for (const key of Object.keys(player.skills)) {
+    player.skills[key] = clamp(cleanInt(skills[key], 0), 0, MAX_SKILL_LEVEL);
+  }
+  player.skillCooldowns = {};
+}
+
+function restoreWeaponEnchants(savedWeapons = []) {
+  const savedList = Array.isArray(savedWeapons) ? savedWeapons : [];
+  for (const weapon of weapons) {
+    const saved = savedList.find((item) => item.id === weapon.id);
+    for (const key of Object.keys(weapon.enchants)) {
+      weapon.enchants[key] = Math.max(0, cleanInt(saved?.enchants?.[key], 0));
+    }
+  }
+}
+
+function restorePlayer(savedPlayer = {}) {
+  const saved = savedPlayer || {};
+  player.x = cleanNumber(saved.x, 0);
+  player.y = cleanNumber(saved.y, 0);
+  player.level = Math.max(1, cleanInt(saved.level, 1));
+  player.xpNext = playerXpRequired(player.level);
+  player.xp = Math.max(0, cleanNumber(saved.xp, 0));
+  player.maxHp = Math.max(1, cleanInt(saved.maxHp, 120));
+  player.hp = clamp(cleanNumber(saved.hp, player.maxHp), 1, player.maxHp);
+  player.axeLevel = Math.max(1, cleanInt(saved.axeLevel, 1));
+  player.pickaxeLevel = Math.max(1, cleanInt(saved.pickaxeLevel, 1));
+  for (const key of resourceKeys) {
+    player[key] = Math.max(0, cleanInt(saved.resources?.[key], player[key] || 0));
+  }
+  player.hiddenTime = 0;
+  player.attackTimer = 0;
+  player.attackFx = null;
+  player.harvestTarget = null;
+  player.harvestPulse = 0;
+  player.harvesting = false;
+  state.camera.x = player.x;
+  state.camera.y = player.y;
+}
+
+function restoreBuildings(savedBuildings = []) {
+  state.buildings = savedBuildings.map((saved) => {
+    const def = buildDefById(saved.id);
+    if (!def || def.type !== "building") return null;
+    const maxHp = Math.max(1, cleanInt(saved.maxHp, def.hp));
+    return {
+      id: def.id,
+      label: def.label,
+      x: cleanNumber(saved.x, player.x),
+      y: cleanNumber(saved.y, player.y),
+      radius: cleanNumber(saved.radius, def.id === "wall" ? 31 : 27),
+      hp: clamp(cleanNumber(saved.hp, maxHp), 1, maxHp),
+      maxHp,
+      attackTimer: 0,
+      repairReservedBy: null,
+    };
+  }).filter(Boolean);
+}
+
+function restoreTraps(savedTraps = []) {
+  state.traps = savedTraps.map((saved) => {
+    const def = buildDefById(saved.id);
+    if (!def || def.type !== "trap") return null;
+    const maxLife = cleanNumber(saved.maxLife, def.life);
+    const maxDurability = Math.max(1, cleanInt(saved.maxDurability, def.durability));
+    return {
+      id: def.id,
+      label: def.label,
+      x: cleanNumber(saved.x, player.x),
+      y: cleanNumber(saved.y, player.y),
+      radius: cleanNumber(saved.radius, def.radius),
+      life: clamp(cleanNumber(saved.life, maxLife), 0, maxLife),
+      maxLife,
+      durability: clamp(cleanInt(saved.durability, maxDurability), 1, maxDurability),
+      maxDurability,
+      cooldown: Math.max(0, cleanNumber(saved.cooldown, 0)),
+      triggered: Boolean(saved.triggered),
+    };
+  }).filter(Boolean);
+}
+
+function savedHomeOffset(saved, index) {
+  const fallback = formationOffset(index);
+  return {
+    x: cleanNumber(saved?.homeOffset?.x, fallback.x),
+    y: cleanNumber(saved?.homeOffset?.y, fallback.y),
+  };
+}
+
+function restoreDefender(saved, index) {
+  const def = hireDefs.find((item) => item.id === saved.id) || {};
+  const attackType = saved.attackType || def.attackType;
+  if (!attackType) return null;
+  const homeOffset = savedHomeOffset(saved, index);
+  const ally = {
+    id: saved.id || def.id,
+    label: saved.label || def.label || "味方",
+    role: saved.role || def.role || "swordsman",
+    kind: "defender",
+    x: cleanNumber(saved.x, player.x + homeOffset.x),
+    y: cleanNumber(saved.y, player.y + homeOffset.y),
+    radius: cleanNumber(saved.radius, 17),
+    hp: cleanNumber(saved.hp, def.hp || 80),
+    maxHp: cleanNumber(saved.maxHp, def.hp || 80),
+    baseMaxHp: cleanNumber(saved.baseMaxHp, def.hp || saved.maxHp || 80),
+    baseSpeed: cleanNumber(saved.baseSpeed, def.speed || 156),
+    level: Math.max(1, cleanInt(saved.level, 1)),
+    xp: Math.max(0, cleanNumber(saved.xp, 0)),
+    xpNext: Math.max(1, cleanInt(saved.xpNext, 54)),
+    moveDir: "down",
+    moving: false,
+    homeOffset,
+    attackType,
+    baseDamage: cleanNumber(saved.baseDamage, def.damage || saved.damage || 8),
+    damage: cleanNumber(saved.baseDamage, def.damage || saved.damage || 8),
+    range: cleanNumber(saved.range, def.range || 70),
+    rate: cleanNumber(saved.rate, def.rate || 1),
+    knockback: cleanNumber(saved.knockback, def.knockback || 35),
+    projectileSpeed: cleanNumber(saved.projectileSpeed, def.projectileSpeed || 0),
+    splash: cleanNumber(saved.splash, def.splash || 0),
+    attackTimer: 0,
+    attackFx: null,
+    weaponId: saved.weaponId || def.weaponId || (attackType === "melee" ? "ironSword" : null),
+  };
+  syncAllyStats(ally);
+  return ally;
+}
+
+function restoreWorker(saved, index) {
+  const def = hireDefs.find((item) => item.id === saved.id) || {};
+  const kind = saved.kind || def.kind;
+  if (!kind || kind === "defender") return null;
+  const homeOffset = savedHomeOffset(saved, index);
+  const ally = {
+    id: saved.id || def.id,
+    label: saved.label || def.label || "味方",
+    role: saved.role || def.role || kind,
+    kind,
+    x: cleanNumber(saved.x, player.x + homeOffset.x),
+    y: cleanNumber(saved.y, player.y + homeOffset.y),
+    radius: cleanNumber(saved.radius, kind === "dog" ? 15 : kind === "worker" ? 16 : 17),
+    hp: cleanNumber(saved.hp, def.hp || 70),
+    maxHp: cleanNumber(saved.maxHp, def.hp || 70),
+    baseMaxHp: cleanNumber(saved.baseMaxHp, def.hp || saved.maxHp || 70),
+    baseSpeed: cleanNumber(saved.baseSpeed, def.speed || 150),
+    level: Math.max(1, cleanInt(saved.level, 1)),
+    xp: Math.max(0, cleanNumber(saved.xp, 0)),
+    xpNext: Math.max(1, cleanInt(saved.xpNext, 54)),
+    moveDir: "down",
+    moving: false,
+    homeOffset,
+    targets: Array.isArray(saved.targets) && saved.targets.length > 0 ? [...saved.targets] : [...(def.targets || [])],
+    searchRadius: cleanNumber(saved.searchRadius, def.searchRadius || 420),
+    leash: cleanNumber(saved.leash, def.leash || 430),
+    harvestTarget: null,
+    harvestPulse: 0,
+    repairTarget: null,
+    repairJob: null,
+    repairPulse: 0,
+    healTarget: null,
+    healPulse: 0,
+    fetchTarget: null,
+    carryDrop: null,
+    healRange: cleanNumber(saved.healRange, def.healRange || 0),
+  };
+  syncAllyStats(ally);
+  return ally;
+}
+
+function restoreAllies(savedAllies = {}) {
+  const savedDefenders = Array.isArray(savedAllies.defenders) ? savedAllies.defenders : [];
+  const savedWorkers = Array.isArray(savedAllies.workers) ? savedAllies.workers : [];
+  state.defenders = savedDefenders.map((saved, index) => restoreDefender(saved, index)).filter(Boolean);
+  state.workers = savedWorkers.map((saved, index) => restoreWorker(saved, index + state.defenders.length)).filter(Boolean);
+  syncAllies();
+}
+
+function clearRuntimeWorldState() {
+  closeWorldMenu();
+  closeSkillChoice();
+  clearPointerControl();
+  state.keys.clear();
+  state.skillChoice.pending = 0;
+  state.enemies = [];
+  state.projectiles = [];
+  state.resources = [];
+  state.drops = [];
+  state.flyItems = [];
+  state.particles = [];
+  state.floatText = [];
+  state.resourceSpawnTimer = 0;
+  state.spawnTimer = 0;
+}
+
+function loadGameSave(save) {
+  if (!save || save.kind !== "frontier-ring-save") {
+    throw new Error("Frontier Ring のセーブJSONではありません");
+  }
+  clearRuntimeWorldState();
+  state.terrainSeed = cleanInt(save.terrainSeed, 0);
+  restoreUnlocks(save.player?.unlocks);
+  restoreSkills(save.player?.skills);
+  restoreWeaponEnchants(save.player?.weaponEnchants);
+  restorePlayer(save.player);
+  restoreBuildings(Array.isArray(save.buildings) ? save.buildings : []);
+  restoreTraps(Array.isArray(save.traps) ? save.traps : []);
+  restoreAllies(save.allies || {});
+  seedAmbientResourcesAroundPlayer();
+
+  const savedWeaponId = save.player?.equippedWeaponId;
+  const savedWeaponIndex = weapons.findIndex((weapon) => weapon.id === savedWeaponId && isUnlocked("weapons", weapon.id));
+  equippedIndex = savedWeaponIndex >= 0 ? savedWeaponIndex : weapons.findIndex((weapon) => isUnlocked("weapons", weapon.id));
+  if (equippedIndex < 0) equippedIndex = 0;
+
+  const waveIndex = Math.max(1, cleanInt(save.wave?.index, 1));
+  startWave(waveIndex);
+  renderStaticUi();
+  updateUi();
+  showToast(`セーブを読み込みました：第${state.wave.index}ウェーブ`);
+}
+
+async function loadSaveFile(file) {
+  if (!file) return;
+  try {
+    const text = await file.text();
+    loadGameSave(JSON.parse(text));
+  } catch (error) {
+    showToast(`ロードに失敗しました：${error.message}`);
+  }
+}
+
+function saveDragHasFiles(event) {
+  return Array.from(event.dataTransfer?.types || []).includes("Files");
+}
+
+let saveDragDepth = 0;
+
+function showSaveDropOverlay(show) {
+  if (ui.saveDropOverlay) ui.saveDropOverlay.hidden = !show;
+}
+
+function handleSaveDragEnter(event) {
+  if (!saveDragHasFiles(event)) return;
+  event.preventDefault();
+  saveDragDepth += 1;
+  showSaveDropOverlay(true);
+}
+
+function handleSaveDragOver(event) {
+  if (!saveDragHasFiles(event)) return;
+  event.preventDefault();
+  event.dataTransfer.dropEffect = "copy";
+  showSaveDropOverlay(true);
+}
+
+function handleSaveDragLeave(event) {
+  event.preventDefault();
+  saveDragDepth = Math.max(0, saveDragDepth - 1);
+  if (saveDragDepth === 0) showSaveDropOverlay(false);
+}
+
+function handleSaveDrop(event) {
+  event.preventDefault();
+  saveDragDepth = 0;
+  showSaveDropOverlay(false);
+  loadSaveFile(event.dataTransfer.files?.[0]);
+}
+
 function buildDefById(id) {
   return buildDefs.find((def) => def.id === id);
 }
@@ -2171,21 +2615,59 @@ function raidEnemyPoolForWave(wave) {
   return entries;
 }
 
+function raidPatternForWave(wave) {
+  const tier = waveTier(wave);
+  const raidIndex = Math.floor(wave / 5);
+  if (wave >= 15 && raidIndex % 3 === 0) {
+    return {
+      label: "イノシシ大突進",
+      detail: "イノシシの群れと大型個体が突進してきます。防壁で受け止めると立て直しやすくなります。",
+      enemies: [
+        { id: "boar", weight: 10 + tier * 0.9 },
+        { id: "goblin", weight: 2 + tier * 0.25 },
+        { id: "wolf", weight: wave >= 20 ? 2 + tier * 0.35 : 0 },
+      ].filter((entry) => entry.weight > 0),
+      fixedSpawns: [
+        { id: "boarBoss", count: 1 + Math.floor(tier / 8), scale: 1 + tier * 0.14 },
+      ],
+    };
+  }
+  if (wave >= 15 && raidIndex % 3 === 2) {
+    return {
+      label: "混成大襲撃",
+      detail: "近いウェーブで出現する魔物が混ざった大群です。足の速い敵と遠距離敵が同時に来ます。",
+      enemies: raidEnemyPoolForWave(wave),
+      fixedSpawns: [],
+    };
+  }
+  return {
+    label: "大襲撃",
+    detail: "周辺の魔物が大群で押し寄せます。",
+    enemies: raidEnemyPoolForWave(wave),
+    fixedSpawns: [],
+  };
+}
+
 function raidWaveDef(wave) {
   const tier = waveTier(wave);
+  const pattern = raidPatternForWave(wave);
+  const baseTotal = 24 + tier * 11 + Math.floor(wave * 1.3);
+  const fixedTotal = (pattern.fixedSpawns || []).reduce((sum, spawn) => sum + (spawn.count || 1), 0);
+  const total = baseTotal + fixedTotal;
   return {
-    total: 24 + tier * 11 + Math.floor(wave * 1.3),
+    total,
     maxActive: Math.min(28, 9 + tier * 4),
-    spawnInterval: Math.max(0.18, 0.48 - tier * 0.035),
+    spawnInterval: Math.max(0.18, pattern.label === "イノシシ大突進" ? 0.42 - tier * 0.03 : 0.48 - tier * 0.035),
     timeout: 145 + tier * 18,
     scale: 1 + (wave - 4) * 0.085 + tier * 0.04,
     event: {
       type: "raid",
-      label: "大襲撃",
-      title: `第${wave}ウェーブ 大襲撃`,
-      detail: `周辺の魔物が大群で押し寄せます。敵数 ${24 + tier * 11 + Math.floor(wave * 1.3)}体`,
+      label: pattern.label,
+      title: `第${wave}ウェーブ ${pattern.label}`,
+      detail: `${pattern.detail} 敵数 ${total}体`,
     },
-    enemies: raidEnemyPoolForWave(wave),
+    fixedSpawns: pattern.fixedSpawns,
+    enemies: pattern.enemies,
   };
 }
 
@@ -2443,11 +2925,7 @@ function updateWave(dt) {
 }
 
 function initWorld() {
-  for (let i = 0; i < 34; i += 1) spawnResource("wood", true);
-  for (let i = 0; i < 25; i += 1) spawnResource("stone", true);
-  for (let i = 0; i < 16; i += 1) spawnResource("gold", true);
-  for (let i = 0; i < 18; i += 1) spawnResource("iron", true);
-  spawnResource("starstone", false);
+  seedAmbientResourcesAroundPlayer();
   startWave(1);
 }
 
@@ -4194,10 +4672,12 @@ function drawEnemy(enemy) {
       ctx.arc(p.x, p.y - 9, enemy.radius + 6 + Math.sin(state.time * 7) * 2, 0, TAU);
       ctx.stroke();
     }
+    const barWidth = enemy.boss ? Math.max(62, enemy.radius * 2.2) : 38;
+    const barY = enemy.boss ? p.y - customSprite.height + 14 : p.y - 31;
     ctx.fillStyle = "rgba(0,0,0,0.48)";
-    ctx.fillRect(p.x - 19, p.y - 31, 38, 4);
-    ctx.fillStyle = "#65c47b";
-    ctx.fillRect(p.x - 19, p.y - 31, 38 * clamp(enemy.hp / enemy.maxHp, 0, 1), 4);
+    ctx.fillRect(p.x - barWidth / 2, barY, barWidth, enemy.boss ? 5 : 4);
+    ctx.fillStyle = enemy.boss ? "#e7564f" : "#65c47b";
+    ctx.fillRect(p.x - barWidth / 2, barY, barWidth * clamp(enemy.hp / enemy.maxHp, 0, 1), enemy.boss ? 5 : 4);
     return;
   }
   if (spritesReady && enemy.type === "redSlime") {
@@ -5064,6 +5544,12 @@ if (ui.quickMenuButton) {
     else openWorldMenuAtPlayer();
   });
 }
+if (ui.saveButton) {
+  ui.saveButton.addEventListener("click", (event) => {
+    event.stopPropagation();
+    downloadSaveFile();
+  });
+}
 ui.radialMenu.addEventListener("click", (event) => {
   const button = event.target.closest("[data-menu]");
   if (!button) return;
@@ -5090,6 +5576,10 @@ if (ui.equippedWeaponHud) {
 if (ui.rerollRewards) {
   ui.rerollRewards.addEventListener("click", rerollSkillChoices);
 }
+window.addEventListener("dragenter", handleSaveDragEnter);
+window.addEventListener("dragover", handleSaveDragOver);
+window.addEventListener("dragleave", handleSaveDragLeave);
+window.addEventListener("drop", handleSaveDrop);
 
 resize();
 renderStaticUi();
