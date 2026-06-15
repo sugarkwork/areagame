@@ -3783,7 +3783,7 @@ function findDefenderHuntTarget(defender, homeX, homeY) {
   const attackRange = (defender.range || 96) * allyRangeMultiplier();
   const melee = defender.attackType === "melee";
   const base = assignedBase(defender);
-  const homeLeash = base ? baseDutyRadiusFor(defender, base) : melee ? 560 : attackRange + 90;
+  const homeLeash = base ? baseDutyRadiusFor(defender, base) : melee ? 560 : attackRange + 260;
   let best = null;
   let bestScore = Infinity;
 
@@ -3796,7 +3796,6 @@ function findDefenderHuntTarget(defender, homeX, homeY) {
     if (enemyHomeDistance > homeLeash) continue;
 
     const defenderDistance = Math.hypot(enemy.x - defender.x, enemy.y - defender.y);
-    if (!melee && defenderDistance > attackRange) continue;
 
     const score = protectionScore + defenderDistance * 0.42 + enemyHomeDistance * 0.16;
     if (score < bestScore) {
@@ -3816,9 +3815,11 @@ function updateDefenders(dt) {
     const homeX = home.x;
     const homeY = home.y;
     const homeDistance = Math.hypot(homeX - defender.x, homeY - defender.y);
-    const escortLeash = home.base ? baseDutyRadiusFor(defender, home.base) + 40 : defender.attackType === "melee" ? 520 : 230;
+    const defenderAttackRange = (defender.range || 96) * allyRangeMultiplier();
+    const escortLeash = home.base ? baseDutyRadiusFor(defender, home.base) + 40 : defender.attackType === "melee" ? 520 : defenderAttackRange + 240;
+    const fallbackSearchRange = defender.attackType === "melee" ? defenderAttackRange : defenderAttackRange + 220;
     const target = homeDistance <= escortLeash
-      ? findDefenderHuntTarget(defender, homeX, homeY) || (home.base ? null : findNearestEnemy((defender.range || 96) * allyRangeMultiplier(), defender))
+      ? findDefenderHuntTarget(defender, homeX, homeY) || (home.base ? null : findNearestEnemy(fallbackSearchRange, defender))
       : null;
     if (target) {
       const dx = target.x - defender.x;
@@ -3826,8 +3827,9 @@ function updateDefenders(dt) {
       const len = Math.hypot(dx, dy) || 1;
       defender.moveDir = directionFromVector(dx, dy, defender.moveDir);
       const attackRange = (defender.range || 96) * allyRangeMultiplier();
-      if (len > attackRange && defender.attackType === "melee") {
-        moveAllyToward(defender, target.x, target.y, dt, attackRange * 0.78);
+      const approachDistance = defender.attackType === "melee" ? attackRange * 0.78 : attackRange * 0.85;
+      if (len > attackRange) {
+        moveAllyToward(defender, target.x, target.y, dt, approachDistance);
         continue;
       }
       defender.moving = false;
