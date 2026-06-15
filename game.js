@@ -60,6 +60,9 @@ const resourceKeys = ["wood", "stone", "gold", "iron", "meat", "starstone"];
 const SAVE_VERSION = 1;
 const ENEMY_HP_MULTIPLIER = 1.5;
 const RESOURCE_HP_MULTIPLIER = 1.5;
+const BASE_DUTY_EXTRA_RADIUS = 0.3;
+const BASE_WORKER_THREAT_RADIUS = 230;
+const BASE_THREAT_RADIUS_PADDING = 80;
 const PLAYER_XP_START = 24;
 const PLAYER_XP_EARLY_TARGET = 150;
 const PLAYER_XP_EARLY_TARGET_LEVEL = 20;
@@ -824,7 +827,7 @@ const buildDefs = [
     weight: 6,
     cost: { wood: 32, stone: 24, iron: 8, gold: 6, meat: 4 },
     hp: 860,
-    healRadius: 220,
+    healRadius: 440,
     healRate: 0.012,
   },
 ];
@@ -1524,7 +1527,12 @@ function baseBuildings() {
 }
 
 function baseRadius(base) {
-  return base?.healRadius || buildDefById("base")?.healRadius || 220;
+  const defRadius = buildDefById("base")?.healRadius || 440;
+  return Math.max(base?.healRadius || defRadius, defRadius);
+}
+
+function baseWorkRadius(base) {
+  return baseRadius(base) * (1 + BASE_DUTY_EXTRA_RADIUS);
 }
 
 function assignedBase(ally) {
@@ -1569,7 +1577,42 @@ function allyHomePosition(ally) {
 function withinAssignedBase(ally, target, padding = 0) {
   const base = assignedBase(ally);
   if (!base) return true;
-  return Math.hypot(target.x - base.x, target.y - base.y) <= baseRadius(base) + padding;
+  return Math.hypot(target.x - base.x, target.y - base.y) <= baseWorkRadius(base) + padding;
+}
+
+function clearAllyWorkTargets(ally) {
+  ally.harvestTarget = null;
+  ally.repairTarget = null;
+  ally.healTarget = null;
+  ally.fetchTarget = null;
+  if (ally.repairJob) cancelRepairJob(ally);
+}
+
+function isCombatAlly(ally) {
+  return ally.attackType === "melee" || ally.attackType === "ranged" || ally.attackType === "magic";
+}
+
+function assignedBaseThreat(ally) {
+  const base = assignedBase(ally);
+  if (!base || isCombatAlly(ally)) return null;
+  const baseThreatRadius = baseRadius(base) + BASE_THREAT_RADIUS_PADDING;
+  for (const enemy of state.enemies) {
+    if (enemy.hp <= 0) continue;
+    const nearAlly = Math.hypot(enemy.x - ally.x, enemy.y - ally.y) <= BASE_WORKER_THREAT_RADIUS;
+    const nearBase = Math.hypot(enemy.x - base.x, enemy.y - base.y) <= baseThreatRadius;
+    if (nearAlly || nearBase) return enemy;
+  }
+  return null;
+}
+
+function retreatAssignedWorkerIfThreatened(ally, dt) {
+  const base = assignedBase(ally);
+  if (!base || isCombatAlly(ally) || !assignedBaseThreat(ally)) return false;
+  clearAllyWorkTargets(ally);
+  const home = allyHomePosition(ally);
+  moveAllyToward(ally, home.x, home.y, dt, 10);
+  ally.fleeingBase = true;
+  return true;
 }
 
 function assignAllyToNearestBase(ally) {
@@ -1579,16 +1622,31 @@ function assignAllyToNearestBase(ally) {
     return false;
   }
   ally.assignedBaseUid = base.uid;
-  ally.harvestTarget = null;
-  ally.repairTarget = null;
-  ally.repairJob = null;
-  ally.healTarget = null;
-  ally.fetchTarget = null;
-  ally.carryDrop = null;
+  clearAllyWorkTargets(ally);
   showToast(`${ally.label}を${base.label}勤務にしました`);
   addFloatText("拠点勤務", ally.x, ally.y - 50, "#7dd3ff");
   addParticles(ally.x, ally.y, "#7dd3ff", 14, 105);
   return true;
+}
+
+function clearAllyBaseAssignment(ally) {
+  const base = assignedBase(ally);
+  if (!base) {
+    ally.assignedBaseUid = null;
+    return false;
+  }
+  clearAllyWorkTargets(ally);
+  ally.assignedBaseUid = null;
+  ally.fleeingBase = false;
+  showToast(`${ally.label}の拠点勤務を解除しました`);
+  addFloatText("勤務解除", ally.x, ally.y - 50, "#f6f0db");
+  addParticles(ally.x, ally.y, "#f6f0db", 12, 90);
+  return true;
+}
+
+function toggleAllyBaseAssignment(ally) {
+  if (assignedBase(ally)) return clearAllyBaseAssignment(ally);
+  return assignAllyToNearestBase(ally);
 }
 
 const rarityDefs = {
@@ -2548,7 +2606,7 @@ function restoreBuildings(savedBuildings = []) {
       radius: cleanNumber(saved.radius, def.id === "wall" ? 31 : def.id === "base" ? 34 : 27),
       hp: clamp(cleanNumber(saved.hp, maxHp), 1, maxHp),
       maxHp,
-      healRadius: def.id === "base" ? cleanNumber(saved.healRadius, def.healRadius || 220) : null,
+      healRadius: def.id === "base" ? Math.max(cleanNumber(saved.healRadius, def.healRadius || 440), def.healRadius || 440) : null,
       healRate: def.id === "base" ? cleanNumber(saved.healRate, def.healRate || 0.012) : null,
       attackTimer: 0,
       repairReservedBy: null,
@@ -3588,7 +3646,7 @@ function findDefenderHuntTarget(defender, homeX, homeY) {
   const attackRange = (defender.range || 96) * allyRangeMultiplier();
   const melee = defender.attackType === "melee";
   const base = assignedBase(defender);
-  const homeLeash = base ? baseRadius(base) : melee ? 560 : attackRange + 90;
+  const homeLeash = base ? baseWorkRadius(base) : melee ? 560 : attackRange + 90;
   let best = null;
   let bestScore = Infinity;
 
@@ -3621,7 +3679,7 @@ function updateDefenders(dt) {
     const homeX = home.x;
     const homeY = home.y;
     const homeDistance = Math.hypot(homeX - defender.x, homeY - defender.y);
-    const escortLeash = home.base ? baseRadius(home.base) + 60 : defender.attackType === "melee" ? 520 : 230;
+    const escortLeash = home.base ? baseWorkRadius(home.base) + 40 : defender.attackType === "melee" ? 520 : 230;
     const target = homeDistance <= escortLeash
       ? findDefenderHuntTarget(defender, homeX, homeY) || (home.base ? null : findNearestEnemy((defender.range || 96) * allyRangeMultiplier(), defender))
       : null;
@@ -3681,7 +3739,7 @@ function findNearestResourceForWorker(worker) {
   let bestDistance = worker.searchRadius || 380;
   const home = allyHomePosition(worker);
   const center = home.base || player;
-  const allowedRadius = home.base ? baseRadius(home.base) : worker.searchRadius || 380;
+  const allowedRadius = home.base ? baseWorkRadius(home.base) : worker.searchRadius || 380;
   for (const resource of state.resources) {
     if (!worker.targets.includes(resource.type)) continue;
     if (Math.hypot(resource.x - center.x, resource.y - center.y) > allowedRadius) continue;
@@ -3728,7 +3786,7 @@ function findNearestDamagedBuildingForRepairer(worker) {
   let bestScore = Infinity;
   const home = allyHomePosition(worker);
   const center = home.base || worker;
-  const allowedRadius = home.base ? baseRadius(home.base) : worker.searchRadius || 520;
+  const allowedRadius = home.base ? baseWorkRadius(home.base) : worker.searchRadius || 520;
   for (const building of state.buildings) {
     if (building.hp >= building.maxHp || building.repairReservedBy) continue;
     if (Math.hypot(building.x - center.x, building.y - center.y) > allowedRadius) continue;
@@ -3749,7 +3807,7 @@ function findCriticalRepairTarget(worker, currentTarget) {
   let bestRatio = currentRatio;
   const home = allyHomePosition(worker);
   const center = home.base || worker;
-  const allowedRadius = home.base ? baseRadius(home.base) : worker.searchRadius || 520;
+  const allowedRadius = home.base ? baseWorkRadius(home.base) : worker.searchRadius || 520;
   for (const building of state.buildings) {
     if (building === currentTarget || building.hp >= building.maxHp || building.repairReservedBy) continue;
     if (Math.hypot(building.x - center.x, building.y - center.y) > allowedRadius) continue;
@@ -3786,6 +3844,7 @@ function updateRepairer(worker, dt) {
   if (job && (!state.buildings.includes(job.target) || job.target.hp >= job.target.maxHp)) {
     cancelRepairJob(worker);
   }
+  if (retreatAssignedWorkerIfThreatened(worker, dt)) return;
   if (worker.repairJob) {
     const urgent = findCriticalRepairTarget(worker, worker.repairJob.target);
     if (urgent) {
@@ -3871,7 +3930,7 @@ function findHealerTarget(healer) {
   let bestScore = Infinity;
   for (const target of candidates) {
     if (home.base) {
-      if (Math.hypot(target.x - home.base.x, target.y - home.base.y) > baseRadius(home.base)) continue;
+      if (Math.hypot(target.x - home.base.x, target.y - home.base.y) > baseWorkRadius(home.base)) continue;
     } else if (Math.hypot(target.x - player.x, target.y - player.y) > screenRange) {
       continue;
     }
@@ -3892,6 +3951,7 @@ function healerRate(healer, target) {
 
 function updateHealer(healer, dt) {
   syncAllyStats(healer);
+  if (retreatAssignedWorkerIfThreatened(healer, dt)) return;
   if (healer.healTarget && (healer.healTarget.hp <= 0 || healer.healTarget.hp >= healer.healTarget.maxHp - 1)) {
     healer.healTarget = null;
   }
@@ -3946,7 +4006,7 @@ function findNearestDropForDog(dog) {
   let bestDistance = dog.searchRadius || 620;
   const home = allyHomePosition(dog);
   const center = home.base || dog;
-  const allowedRadius = home.base ? baseRadius(home.base) : dog.searchRadius || 620;
+  const allowedRadius = home.base ? baseWorkRadius(home.base) : dog.searchRadius || 620;
   for (const drop of state.drops) {
     if (drop.collected || drop.pickupDelay > 0) continue;
     if (Math.hypot(drop.x - center.x, drop.y - center.y) > allowedRadius) continue;
@@ -3997,6 +4057,8 @@ function updateDog(dog, dt) {
     return;
   }
 
+  if (retreatAssignedWorkerIfThreatened(dog, dt)) return;
+
   const drop = findNearestDropForDog(dog);
   if (drop) {
     dog.fetchTarget = drop;
@@ -4041,6 +4103,10 @@ function updateWorkers(dt) {
       continue;
     }
     syncAllyStats(worker);
+    if (retreatAssignedWorkerIfThreatened(worker, dt)) {
+      worker.harvesting = false;
+      continue;
+    }
     if (!state.resources.includes(worker.harvestTarget)) {
       worker.harvestTarget = null;
     }
@@ -4052,7 +4118,7 @@ function updateWorkers(dt) {
     }
 
     const home = allyHomePosition(worker);
-    const tooFarFromHome = Math.hypot(worker.x - home.x, worker.y - home.y) > (home.base ? baseRadius(home.base) + 95 : worker.leash || 430);
+    const tooFarFromHome = Math.hypot(worker.x - home.x, worker.y - home.y) > (home.base ? baseWorkRadius(home.base) + 30 : worker.leash || 430);
     const target = tooFarFromHome ? null : worker.harvestTarget || findNearestResourceForWorker(worker);
     worker.harvestTarget = target;
 
@@ -4503,7 +4569,7 @@ function placeBuild(def) {
       radius: def.id === "wall" ? 31 : def.id === "base" ? 34 : 27,
       hp: def.hp,
       maxHp: def.hp,
-      healRadius: def.id === "base" ? def.healRadius || 220 : null,
+      healRadius: def.id === "base" ? def.healRadius || 440 : null,
       healRate: def.id === "base" ? def.healRate || 0.012 : null,
       attackTimer: 0,
     });
@@ -5867,7 +5933,7 @@ function allyAtScreenPoint(clientX, clientY) {
 function handleWorldTap(clientX, clientY) {
   const ally = allyAtScreenPoint(clientX, clientY);
   if (!ally) return false;
-  assignAllyToNearestBase(ally);
+  toggleAllyBaseAssignment(ally);
   return true;
 }
 
