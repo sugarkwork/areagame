@@ -4385,31 +4385,29 @@ function enemyTargetDistance(enemy, target) {
   return Math.hypot(target.x - enemy.x, target.y - enemy.y) - (target.radius || player.radius);
 }
 
+function nearestTargetByDistance(origin, targets, distanceFn = (target) => Math.hypot(target.x - origin.x, target.y - origin.y)) {
+  let best = null;
+  let bestDistance = Infinity;
+  for (const target of targets) {
+    if (!target || target.hp <= 0) continue;
+    const d = distanceFn(target);
+    if (d < bestDistance) {
+      best = target;
+      bestDistance = d;
+    }
+  }
+  return { target: best, distance: bestDistance };
+}
+
 function findEnemyTarget(enemy) {
-  let target = player.hiddenTime > 0 ? null : player;
-  let targetDistance = target ? Math.hypot(player.x - enemy.x, player.y - enemy.y) : Infinity;
-  for (const building of state.buildings) {
-    const d = Math.hypot(building.x - enemy.x, building.y - enemy.y) - building.radius;
-    if (d < targetDistance && d < 92) {
-      target = building;
-      targetDistance = d;
-    }
-  }
-  for (const defender of state.defenders) {
-    const d = Math.hypot(defender.x - enemy.x, defender.y - enemy.y);
-    if (d < targetDistance && d < 82) {
-      target = defender;
-      targetDistance = d;
-    }
-  }
-  for (const worker of state.workers) {
-    const d = Math.hypot(worker.x - enemy.x, worker.y - enemy.y);
-    if (d < targetDistance && d < 82) {
-      target = worker;
-      targetDistance = d;
-    }
-  }
-  return { target, targetDistance };
+  const targets = [
+    ...(player.hiddenTime > 0 ? [] : [player]),
+    ...state.defenders,
+    ...state.workers,
+    ...baseBuildings(),
+  ];
+  const result = nearestTargetByDistance(enemy, targets, (target) => enemyTargetDistance(enemy, target));
+  return { target: result.target, targetDistance: result.distance };
 }
 
 function resolveEnemyWallCollision(enemy) {
@@ -4567,20 +4565,17 @@ function updateBoarEnemy(enemy, target, dt) {
 }
 
 function findSiegeTurtleTarget(enemy) {
-  const bases = baseBuildings();
-  const targets = bases.length > 0
-    ? bases
-    : state.buildings.filter((building) => building.hp > 0);
-  let best = null;
-  let bestDistance = Infinity;
-  for (const target of targets) {
-    const d = Math.hypot(target.x - enemy.x, target.y - enemy.y);
-    if (d < bestDistance) {
-      best = target;
-      bestDistance = d;
-    }
+  const priorityGroups = [
+    baseBuildings(),
+    state.buildings.filter((building) => building.id !== "base" && building.hp > 0),
+    [player],
+    [...state.defenders, ...state.workers],
+  ];
+  for (const targets of priorityGroups) {
+    const { target } = nearestTargetByDistance(enemy, targets);
+    if (target) return target;
   }
-  return best;
+  return null;
 }
 
 function isSiegeTurtleCrushing(enemy) {
