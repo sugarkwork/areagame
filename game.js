@@ -58,6 +58,8 @@ const dist = (a, b) => Math.hypot(a.x - b.x, a.y - b.y);
 const now = () => performance.now() / 1000;
 const resourceKeys = ["wood", "stone", "gold", "iron", "meat", "starstone"];
 const SAVE_VERSION = 1;
+const ENEMY_HP_MULTIPLIER = 1.5;
+const RESOURCE_HP_MULTIPLIER = 1.5;
 const PLAYER_XP_START = 24;
 const PLAYER_XP_EARLY_TARGET = 150;
 const PLAYER_XP_EARLY_TARGET_LEVEL = 20;
@@ -2290,13 +2292,14 @@ function spawnResource(type, nearPlayer = false) {
     }
   }
   if (!point) return false;
+  const hp = Math.round(def.hp * RESOURCE_HP_MULTIPLIER);
 
   state.resources.push({
     type,
     x: point.x,
     y: point.y,
-    hp: def.hp,
-    maxHp: def.hp,
+    hp,
+    maxHp: hp,
     radius: def.radius,
     amount: Math.round(rand(def.amount[0], def.amount[1])),
   });
@@ -3029,7 +3032,7 @@ function spawnEnemy(type = "redSlime", options = {}) {
   const def = enemyDefById(type);
   const point = options.point || enemySpawnPoint();
   const waveScale = options.scale || currentWaveDef().scale || 1;
-  const hp = Math.round(def.hp * waveScale);
+  const hp = Math.round(def.hp * waveScale * ENEMY_HP_MULTIPLIER);
   state.enemies.push({
     type: def.id,
     label: def.label,
