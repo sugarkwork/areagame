@@ -64,6 +64,7 @@ const BASE_DUTY_EXTRA_RADIUS = 0.3;
 const BASE_DOG_DUTY_EXTRA_RADIUS = 0.9;
 const BASE_WORKER_THREAT_RADIUS = 145;
 const BASE_DOG_THREAT_RADIUS = 95;
+const BASE_ENEMY_TOTAL_BONUS = 0.2;
 const PLAYER_XP_START = 24;
 const PLAYER_XP_EARLY_TARGET = 150;
 const PLAYER_XP_EARLY_TARGET_LEVEL = 20;
@@ -342,6 +343,8 @@ const state = {
     timeoutWarned: false,
     fixedQueue: [],
     event: null,
+    baseCountAtStart: 0,
+    spawnAnchorIndex: 0,
   },
   resources: [],
   enemies: [],
@@ -2979,30 +2982,66 @@ function eventWaveDef(wave) {
   return wave % 10 === 0 ? bossWaveDef(wave) : raidWaveDef(wave);
 }
 
+function waveBaseCountForScaling() {
+  const count = Number.isFinite(state.wave.baseCountAtStart)
+    ? state.wave.baseCountAtStart
+    : baseBuildings().length;
+  return Math.max(0, count);
+}
+
+function baseSpawnMultiplier() {
+  return 1 + waveBaseCountForScaling() * BASE_ENEMY_TOTAL_BONUS;
+}
+
+function stripEnemyCountDetail(detail = "") {
+  return detail.replace(/\s*敵数\s*\d+体/g, "");
+}
+
+function scaleWaveDefForBases(def) {
+  const baseCount = waveBaseCountForScaling();
+  if (baseCount <= 0) return def;
+  const multiplier = baseSpawnMultiplier();
+  const fixedTotal = (def.fixedSpawns || []).reduce((sum, spawn) => sum + (spawn.count || 1), 0);
+  const total = Math.max(fixedTotal, Math.ceil(def.total * multiplier));
+  const scaled = {
+    ...def,
+    total,
+    baseSpawnCount: baseCount,
+    spawnMultiplier: multiplier,
+  };
+  if (def.event) {
+    scaled.event = {
+      ...def.event,
+      detail: `${stripEnemyCountDetail(def.event.detail)} 敵数 ${total}体`,
+    };
+  }
+  return scaled;
+}
+
 function currentWaveDef() {
   const wave = state.wave.index;
   const eventDef = eventWaveDef(wave);
-  if (eventDef) return eventDef;
+  if (eventDef) return scaleWaveDefForBases(eventDef);
   if (wave === 1) {
-    return {
+    return scaleWaveDefForBases({
       total: 10,
       maxActive: 1,
       spawnInterval: 2.2,
       timeout: 120,
       enemies: [{ id: "redSlime", weight: 1 }],
-    };
+    });
   }
   if (wave === 2) {
-    return {
+    return scaleWaveDefForBases({
       total: 20,
       maxActive: 2,
       spawnInterval: 1.9,
       timeout: 140,
       enemies: [{ id: "redSlime", weight: 1 }],
-    };
+    });
   }
   if (wave === 3) {
-    return {
+    return scaleWaveDefForBases({
       total: 28,
       maxActive: 3,
       spawnInterval: 1.8,
@@ -3013,10 +3052,10 @@ function currentWaveDef() {
         { id: "greenSlime", weight: 3 },
         { id: "goblin", weight: 3 },
       ],
-    };
+    });
   }
   const extra = wave - 4;
-  return {
+  return scaleWaveDefForBases({
     total: 34 + extra * 8,
     maxActive: Math.min(8, 4 + Math.floor(extra / 2)),
     spawnInterval: Math.max(0.9, 1.65 - extra * 0.06),
@@ -3030,7 +3069,7 @@ function currentWaveDef() {
       { id: "boar", weight: 2 + extra * 0.18 },
       { id: "goblinArcher", weight: 2 + extra * 0.16 },
     ],
-  };
+  });
 }
 
 function weightedEnemyId(entries) {
@@ -3059,6 +3098,8 @@ function startWave(index = state.wave.index) {
   state.wave.spawned = 0;
   state.wave.spawnTimer = 0.8;
   state.wave.timeoutWarned = false;
+  state.wave.baseCountAtStart = baseBuildings().length;
+  state.wave.spawnAnchorIndex = Math.floor(rand(0, state.wave.baseCountAtStart + 1));
   const def = currentWaveDef();
   state.wave.fixedQueue = fixedSpawnQueue(def.fixedSpawns);
   state.wave.event = def.event || null;
@@ -3081,18 +3122,30 @@ function advanceWave(reason = "clear") {
   startWave(state.wave.index + 1);
 }
 
-function enemySpawnPoint() {
+function enemySpawnAnchors() {
+  return [player, ...baseBuildings()];
+}
+
+function nextEnemySpawnAnchor() {
+  const anchors = enemySpawnAnchors();
+  const index = Math.max(0, Math.floor(state.wave.spawnAnchorIndex || 0));
+  const anchor = anchors[index % anchors.length] || player;
+  state.wave.spawnAnchorIndex = index + 1;
+  return anchor;
+}
+
+function enemySpawnPoint(anchor = nextEnemySpawnAnchor()) {
   const angle = rand(0, TAU);
   const distance = rand(560, 820);
   return {
-    x: player.x + Math.cos(angle) * distance,
-    y: player.y + Math.sin(angle) * distance,
+    x: anchor.x + Math.cos(angle) * distance,
+    y: anchor.y + Math.sin(angle) * distance,
   };
 }
 
 function spawnEnemy(type = "redSlime", options = {}) {
   const def = enemyDefById(type);
-  const point = options.point || enemySpawnPoint();
+  const point = options.point || enemySpawnPoint(options.anchor);
   const waveScale = options.scale || currentWaveDef().scale || 1;
   const hp = Math.round(def.hp * waveScale * ENEMY_HP_MULTIPLIER);
   state.enemies.push({
