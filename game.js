@@ -119,7 +119,7 @@ let witchSpritesReady = false;
 witchSpriteSheet.onload = () => {
   witchSpritesReady = true;
 };
-witchSpriteSheet.src = "assets/sprites/witch-jrpg-sheet.png";
+witchSpriteSheet.src = "assets/sprites/witch-jrpg-sheet.png?v=20260616-0107";
 
 const elfArcherSpriteSheet = new Image();
 let elfArcherSpritesReady = false;
@@ -367,7 +367,7 @@ const allySprites = {
     down: [box(0, 0, 96, 144), box(96, 0, 96, 144), box(192, 0, 96, 144)],
     right: [box(0, 144, 96, 144), box(96, 144, 96, 144), box(192, 144, 96, 144)],
     up: [box(0, 288, 96, 144), box(96, 288, 96, 144), box(192, 288, 96, 144)],
-    sideFaces: "right",
+    sideFaces: "left",
     width: 56,
     height: 89,
   },
