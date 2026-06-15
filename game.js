@@ -114,6 +114,27 @@ healerSpriteSheet.onload = () => {
 };
 healerSpriteSheet.src = "assets/sprites/healer-jrpg-sheet.png";
 
+const witchSpriteSheet = new Image();
+let witchSpritesReady = false;
+witchSpriteSheet.onload = () => {
+  witchSpritesReady = true;
+};
+witchSpriteSheet.src = "assets/sprites/witch-jrpg-sheet.png";
+
+const elfArcherSpriteSheet = new Image();
+let elfArcherSpritesReady = false;
+elfArcherSpriteSheet.onload = () => {
+  elfArcherSpritesReady = true;
+};
+elfArcherSpriteSheet.src = "assets/sprites/elf-archer-jrpg-sheet.png";
+
+const lumberjackSpriteSheet = new Image();
+let lumberjackSpritesReady = false;
+lumberjackSpriteSheet.onload = () => {
+  lumberjackSpritesReady = true;
+};
+lumberjackSpriteSheet.src = "assets/sprites/lumberjack-jrpg-sheet.png";
+
 const terrainSheet = new Image();
 let terrainReady = false;
 terrainSheet.onload = () => {
@@ -305,8 +326,8 @@ const siegeTurtleSprite = {
   right: [box(0, 96, 96, 96), box(96, 96, 96, 96), box(192, 96, 96, 96)],
   up: [box(0, 192, 96, 96), box(96, 192, 96, 96), box(192, 192, 96, 96)],
   sideFaces: "right",
-  width: 118,
-  height: 94,
+  width: 236,
+  height: 188,
 };
 
 const allySprites = {
@@ -318,6 +339,37 @@ const allySprites = {
     width: 54,
     height: 86,
   },
+  archer: {
+    down: [box(0, 0, 96, 144), box(96, 0, 96, 144), box(192, 0, 96, 144)],
+    right: [box(0, 144, 96, 144), box(96, 144, 96, 144), box(192, 144, 96, 144)],
+    up: [box(0, 288, 96, 144), box(96, 288, 96, 144), box(192, 288, 96, 144)],
+    sideFaces: "right",
+    width: 56,
+    height: 88,
+  },
+  mage: {
+    down: [box(0, 0, 96, 144), box(96, 0, 96, 144), box(192, 0, 96, 144)],
+    right: [box(0, 144, 96, 144), box(96, 144, 96, 144), box(192, 144, 96, 144)],
+    up: [box(0, 288, 96, 144), box(96, 288, 96, 144), box(192, 288, 96, 144)],
+    sideFaces: "right",
+    width: 56,
+    height: 89,
+  },
+  lumberjack: {
+    down: [box(0, 0, 96, 144), box(96, 0, 96, 144), box(192, 0, 96, 144)],
+    right: [box(0, 144, 96, 144), box(96, 144, 96, 144), box(192, 144, 96, 144)],
+    up: [box(0, 288, 96, 144), box(96, 288, 96, 144), box(192, 288, 96, 144)],
+    sideFaces: "right",
+    width: 56,
+    height: 88,
+  },
+};
+
+const allySpriteSheets = {
+  healer: { image: healerSpriteSheet, ready: () => healerSpritesReady },
+  archer: { image: elfArcherSpriteSheet, ready: () => elfArcherSpritesReady },
+  mage: { image: witchSpriteSheet, ready: () => witchSpritesReady },
+  lumberjack: { image: lumberjackSpriteSheet, ready: () => lumberjackSpritesReady },
 };
 
 const state = {
@@ -889,7 +941,7 @@ const hireDefs = [
   },
   {
     id: "mage",
-    label: "魔法使い",
+    label: "魔女",
     icon: "assets/icons/hire-mage.png",
     role: "mage",
     attackType: "magic",
@@ -1170,9 +1222,9 @@ const enemyDefs = {
     label: "砦亀",
     color: "#5c8b50",
     accent: "#c6e28c",
-    radius: 48,
+    radius: 96,
     hp: 1600,
-    speed: [18, 23],
+    speed: [9, 12],
     damage: 36,
     attackCooldown: 1.2,
     xp: 260,
@@ -1356,6 +1408,17 @@ function drawSiegeTurtleSpriteFrame(frame, screenX, groundY, width, height, opti
 
 function drawHealerSpriteFrame(frame, screenX, groundY, width, height, options = {}) {
   return drawSpriteFrameFrom(healerSpriteSheet, healerSpritesReady, frame, screenX, groundY, width, height, options);
+}
+
+function allySpriteReady(role) {
+  const sheet = allySpriteSheets[role];
+  return Boolean(sheet && sheet.ready());
+}
+
+function drawAllySpriteFrame(role, frame, screenX, groundY, width, height, options = {}) {
+  const sheet = allySpriteSheets[role];
+  if (!sheet) return false;
+  return drawSpriteFrameFrom(sheet.image, sheet.ready(), frame, screenX, groundY, width, height, options);
 }
 
 function drawSpriteFrameFrom(sheet, ready, frame, screenX, groundY, width, height, options = {}) {
@@ -5789,6 +5852,14 @@ function drawDefender(defender) {
     archer: "#78b957",
     mage: "#7dd3ff",
   }[defender.role] || "#65c47b";
+  const roleSprite = allySprites[defender.role];
+  if (roleSprite && allySpriteReady(defender.role)) {
+    const frame = spriteFrame(roleSprite, defender.moveDir, defender.moving, 7);
+    drawSpriteShadow(p.x, p.y + 18, 32, 10, 0.22);
+    drawAllySpriteFrame(defender.role, frame.frame, p.x, p.y + 26, frame.width, frame.height, { flip: frame.flip });
+    drawAllyStatus(defender, p.x, p.y, 40);
+    return;
+  }
   if (spritesReady) {
     const frame = spriteFrame(sprites.guard, defender.moveDir, defender.moving, 7);
     drawSpriteShadow(p.x, p.y + 18, 32, 10, 0.22);
@@ -5831,11 +5902,12 @@ function drawDefender(defender) {
 
 function drawWorker(worker) {
   const p = worldToScreen(worker);
-  const healerSprite = worker.role === "healer" ? allySprites.healer : null;
-  if (healerSprite && healerSpritesReady) {
-    const frame = spriteFrame(healerSprite, worker.moveDir, worker.moving || worker.healPulse > 0, 7);
+  const roleSprite = allySprites[worker.role];
+  if (roleSprite && allySpriteReady(worker.role)) {
+    const active = worker.moving || worker.healPulse > 0 || Boolean(worker.harvestTarget || worker.repairTarget || worker.healTarget);
+    const frame = spriteFrame(roleSprite, worker.moveDir, active, 7);
     drawSpriteShadow(p.x, p.y + 18, 30, 10, 0.2);
-    drawHealerSpriteFrame(frame.frame, p.x, p.y + 26, frame.width, frame.height, { flip: frame.flip });
+    drawAllySpriteFrame(worker.role, frame.frame, p.x, p.y + 26, frame.width, frame.height, { flip: frame.flip });
     if (worker.healTarget) {
       const target = worldToScreen(worker.healTarget);
       ctx.strokeStyle = "rgba(168,224,95,0.48)";
@@ -5850,6 +5922,18 @@ function drawWorker(worker) {
       ctx.beginPath();
       ctx.arc(target.x, target.y - 14, 14 + Math.sin(state.time * 8) * 3, 0, TAU);
       ctx.stroke();
+    }
+    const workTarget = worker.harvestTarget || worker.repairTarget;
+    if (workTarget) {
+      const target = worldToScreen(workTarget);
+      ctx.strokeStyle = "rgba(246,240,219,0.22)";
+      ctx.lineWidth = 2;
+      ctx.setLineDash([3, 5]);
+      ctx.beginPath();
+      ctx.moveTo(p.x, p.y);
+      ctx.lineTo(target.x, target.y);
+      ctx.stroke();
+      ctx.setLineDash([]);
     }
     drawAllyStatus(worker, p.x, p.y, 40);
     return;
