@@ -1223,7 +1223,7 @@ const enemyDefs = {
     color: "#5c8b50",
     accent: "#c6e28c",
     radius: 96,
-    hp: 1600,
+    hp: 3200,
     speed: [9, 12],
     damage: 36,
     attackCooldown: 1.2,
@@ -3088,22 +3088,37 @@ function eventWaveDef(wave) {
   return wave % 10 === 0 ? bossWaveDef(wave) : raidWaveDef(wave);
 }
 
+function siegeTurtleTier(wave) {
+  return Math.max(0, Math.floor((wave - 6) / 6));
+}
+
 function siegeTurtleScale(wave) {
   return 1 + Math.max(0, wave - 6) * 0.055;
 }
 
+function siegeTurtleHpScale(wave) {
+  const tier = siegeTurtleTier(wave);
+  return siegeTurtleScale(wave) * (1 + tier * 0.12);
+}
+
+function siegeTurtleCount(wave) {
+  return Math.min(6, 1 + Math.floor(siegeTurtleTier(wave) / 2));
+}
+
 function addSiegeTurtleToWaveDef(def, wave) {
   if (wave % 6 !== 0) return def;
-  const turtleDetail = "砦亀が拠点だけを目指して進みます。罠で止めながら削ってください。";
-  const total = def.total + 1;
+  const turtleCount = siegeTurtleCount(wave);
+  const hpPercent = Math.round(siegeTurtleHpScale(wave) * 100);
+  const turtleDetail = `砦亀${turtleCount}体が進みます。亀HP ${hpPercent}%相当。罠で止めながら削ってください。`;
+  const total = def.total + turtleCount;
   return {
     ...def,
     total,
-    maxActive: def.maxActive + 1,
-    timeout: def.timeout + 35,
+    maxActive: def.maxActive + turtleCount,
+    timeout: def.timeout + 35 + turtleCount * 12,
     fixedSpawns: [
       ...(def.fixedSpawns || []),
-      { id: "siegeTurtle", count: 1, scale: siegeTurtleScale(wave) },
+      { id: "siegeTurtle", count: turtleCount, scale: siegeTurtleScale(wave), hpScale: siegeTurtleHpScale(wave) },
     ],
     event: def.event
       ? {
@@ -3224,7 +3239,7 @@ function fixedSpawnQueue(entries = []) {
   const queue = [];
   for (const entry of entries) {
     for (let i = 0; i < (entry.count || 1); i += 1) {
-      queue.push({ id: entry.id, scale: entry.scale, boss: true });
+      queue.push({ id: entry.id, scale: entry.scale, hpScale: entry.hpScale, boss: true });
     }
   }
   return queue;
@@ -3285,7 +3300,8 @@ function spawnEnemy(type = "redSlime", options = {}) {
   const def = enemyDefById(type);
   const point = options.point || enemySpawnPoint(options.anchor);
   const waveScale = options.scale || currentWaveDef().scale || 1;
-  const hp = Math.round(def.hp * waveScale * ENEMY_HP_MULTIPLIER);
+  const hpScale = options.hpScale || waveScale;
+  const hp = Math.round(def.hp * hpScale * ENEMY_HP_MULTIPLIER);
   state.enemies.push({
     type: def.id,
     label: def.label,
@@ -3296,7 +3312,7 @@ function spawnEnemy(type = "redSlime", options = {}) {
     maxHp: hp,
     speed: rand(def.speed[0], def.speed[1]) * Math.sqrt(waveScale),
     damage: Math.round(def.damage * (0.9 + waveScale * 0.1)),
-    xp: Math.round(def.xp * waveScale),
+    xp: Math.round(def.xp * Math.max(waveScale, hpScale * 0.8)),
     boss: Boolean(def.boss || options.boss),
     scale: waveScale,
     attackCooldown: def.attackCooldown,
@@ -3342,7 +3358,7 @@ function updateWave(dt) {
 
   while (wave.fixedQueue?.length && state.enemies.length < def.maxActive && wave.spawned < def.total) {
     const spawn = wave.fixedQueue.shift();
-    spawnEnemy(spawn.id, { scale: spawn.scale, boss: spawn.boss });
+    spawnEnemy(spawn.id, { scale: spawn.scale, hpScale: spawn.hpScale, boss: spawn.boss });
     wave.spawned += 1;
   }
 
