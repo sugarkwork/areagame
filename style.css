@@ -252,6 +252,10 @@ button[disabled] {
   transform: translateX(-50%);
 }
 
+.equipped-weapon-hud:active {
+  transform: translateX(-50%) translateY(1px);
+}
+
 .equipped-weapon-hud img {
   width: 42px;
   height: 42px;
