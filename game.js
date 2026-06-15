@@ -245,6 +245,14 @@ const customSprites = {
       width: 48,
       height: 55,
     },
+    goblinShaman: {
+      down: [box(0, 448, 64, 64), box(64, 448, 64, 64), box(128, 448, 64, 64)],
+      right: [box(192, 448, 64, 64), box(256, 448, 64, 64), box(320, 448, 64, 64)],
+      up: [box(384, 448, 64, 64), box(448, 448, 64, 64), box(512, 448, 64, 64)],
+      sideFaces: "right",
+      width: 50,
+      height: 56,
+    },
     blueSlime: {
       down: [box(0, 128, 64, 64), box(64, 128, 64, 64)],
       right: [box(128, 128, 64, 64), box(192, 128, 64, 64)],
@@ -260,6 +268,14 @@ const customSprites = {
       sideFaces: "right",
       width: 46,
       height: 40,
+    },
+    summonedSlime: {
+      down: [box(0, 512, 64, 64), box(64, 512, 64, 64)],
+      right: [box(128, 512, 64, 64), box(192, 512, 64, 64)],
+      up: [box(256, 512, 64, 64), box(320, 512, 64, 64)],
+      sideFaces: "right",
+      width: 42,
+      height: 34,
     },
     boar: {
       down: [box(0, 320, 64, 64), box(64, 320, 64, 64), box(128, 320, 64, 64)],
@@ -1097,6 +1113,27 @@ const enemyDefs = {
     weight: 5,
     behavior: "melee",
   },
+  goblinShaman: {
+    id: "goblinShaman",
+    label: "ゴブリンシャーマン",
+    color: "#8a55c7",
+    accent: "#a8e05f",
+    radius: 16,
+    hp: 34,
+    speed: [84, 102],
+    damage: 0,
+    attackCooldown: 1.1,
+    xp: 30,
+    meatChance: 0.28,
+    meatAmount: [1, 1],
+    weight: 2,
+    behavior: "goblinShaman",
+    healRange: 235,
+    healRate: 24,
+    healPercent: 0.006,
+    summonCooldown: [3.8, 5.4],
+    threatRadius: 190,
+  },
   boar: {
     id: "boar",
     label: "イノシシ",
@@ -1149,6 +1186,23 @@ const enemyDefs = {
     meatAmount: [1, 1],
     weight: 3,
     behavior: "ranged",
+  },
+  summonedSlime: {
+    id: "summonedSlime",
+    label: "召喚スライム",
+    color: "#7867d8",
+    accent: "#a8e05f",
+    radius: 15,
+    hp: 22,
+    speed: [68, 84],
+    damage: 4,
+    attackCooldown: 1.25,
+    xp: 4,
+    meatChance: 0,
+    meatAmount: [0, 0],
+    weight: 0,
+    behavior: "melee",
+    noDrop: true,
   },
   wolf: {
     id: "wolf",
@@ -2962,6 +3016,7 @@ function raidEnemyPoolForWave(wave) {
   ].filter((entry) => entry.weight > 0);
   if (wave >= 10) entries.push({ id: "boar", weight: 2 + tier * 0.35 });
   if (wave >= 10) entries.push({ id: "goblinArcher", weight: 2 + tier * 0.3 });
+  if (wave >= 12) entries.push({ id: "goblinShaman", weight: 1.1 + tier * 0.22 });
   if (wave >= 15) entries.push({ id: "wolf", weight: 2 + tier * 0.45 });
   return entries;
 }
@@ -3105,20 +3160,26 @@ function siegeTurtleCount(wave) {
   return Math.min(6, 1 + Math.floor(siegeTurtleTier(wave) / 2));
 }
 
+function siegeTurtleShamanCount(wave) {
+  return Math.min(8, 2 + Math.floor(siegeTurtleTier(wave) / 2) + Math.max(0, siegeTurtleCount(wave) - 1));
+}
+
 function addSiegeTurtleToWaveDef(def, wave) {
   if (wave % 6 !== 0) return def;
   const turtleCount = siegeTurtleCount(wave);
+  const shamanCount = siegeTurtleShamanCount(wave);
   const hpPercent = Math.round(siegeTurtleHpScale(wave) * 100);
-  const turtleDetail = `砦亀${turtleCount}体が進みます。亀HP ${hpPercent}%相当。罠で止めながら削ってください。`;
-  const total = def.total + turtleCount;
+  const turtleDetail = `砦亀${turtleCount}体とゴブリンシャーマン${shamanCount}体が進みます。亀HP ${hpPercent}%相当。回復役を優先して倒してください。`;
+  const total = def.total + turtleCount + shamanCount;
   return {
     ...def,
     total,
-    maxActive: def.maxActive + turtleCount,
-    timeout: def.timeout + 35 + turtleCount * 12,
+    maxActive: def.maxActive + turtleCount + shamanCount,
+    timeout: def.timeout + 35 + turtleCount * 12 + shamanCount * 4,
     fixedSpawns: [
       ...(def.fixedSpawns || []),
       { id: "siegeTurtle", count: turtleCount, scale: siegeTurtleScale(wave), hpScale: siegeTurtleHpScale(wave) },
+      { id: "goblinShaman", count: shamanCount, scale: Math.max(def.scale || 1, 1 + Math.max(0, wave - 6) * 0.04) },
     ],
     event: def.event
       ? {
@@ -3221,7 +3282,8 @@ function currentWaveDef() {
       { id: "goblin", weight: 3 + extra * 0.25 },
       { id: "boar", weight: 2 + extra * 0.18 },
       { id: "goblinArcher", weight: 2 + extra * 0.16 },
-    ],
+      { id: "goblinShaman", weight: extra >= 4 ? 1 + extra * 0.08 : 0 },
+    ].filter((entry) => entry.weight > 0),
   }, wave));
 }
 
@@ -3302,7 +3364,7 @@ function spawnEnemy(type = "redSlime", options = {}) {
   const waveScale = options.scale || currentWaveDef().scale || 1;
   const hpScale = options.hpScale || waveScale;
   const hp = Math.round(def.hp * hpScale * ENEMY_HP_MULTIPLIER);
-  state.enemies.push({
+  const enemy = {
     type: def.id,
     label: def.label,
     x: point.x,
@@ -3320,6 +3382,12 @@ function spawnEnemy(type = "redSlime", options = {}) {
     range: def.range || 0,
     projectileSpeed: def.projectileSpeed || 0,
     chargeSpeed: def.chargeSpeed || 0,
+    healRange: def.healRange || 0,
+    healRate: def.healRate || 0,
+    healPercent: def.healPercent || 0,
+    summonCooldown: def.summonCooldown || null,
+    threatRadius: def.threatRadius || 0,
+    noDrop: Boolean(def.noDrop || options.noDrop),
     attackTimer: 0,
     stateTimer: def.behavior === "boar" ? 5 : 0,
     chargeState: def.behavior === "boar" ? "windup" : null,
@@ -3337,7 +3405,12 @@ function spawnEnemy(type = "redSlime", options = {}) {
     slow: 0,
     hurtFlash: 0,
     confused: 0,
-  });
+    healTarget: null,
+    healPulse: 0,
+    summonTimer: rand(1.2, 2.4),
+  };
+  state.enemies.push(enemy);
+  return enemy;
 }
 
 function updateWave(dt) {
@@ -3470,7 +3543,8 @@ function awardEnemyDefeat(enemy, source = null) {
   addParticles(enemy.x, enemy.y, def.color, 14, 135);
   gainXp(xp);
   if (isAlly(credit)) allyGainXp(credit, xp);
-  if (Math.random() < Math.min(0.95, (def.meatChance || 0.45) + skillLevel("lucky") * 0.025)) {
+  if (enemy.noDrop || def.noDrop) return;
+  if (Math.random() < Math.min(0.95, (def.meatChance ?? 0.45) + skillLevel("lucky") * 0.025)) {
     const amount = Math.round(rand(def.meatAmount?.[0] || 1, def.meatAmount?.[1] || 1));
     spawnDrops("meat", amount, enemy.x, enemy.y);
     addFloatText("肉", enemy.x, enemy.y - 45, "#d96464");
@@ -4476,6 +4550,30 @@ function moveEnemyToward(enemy, target, dt, speedMultiplier = 1) {
   if (wall) enemyHitBlockingWall(enemy, wall);
 }
 
+function moveEnemyAwayFrom(enemy, target, dt, speedMultiplier = 1) {
+  if (enemy.rooted > 0) {
+    enemy.moving = false;
+    return;
+  }
+  let dx = enemy.x - target.x;
+  let dy = enemy.y - target.y;
+  let len = Math.hypot(dx, dy);
+  if (len < 0.01) {
+    const angle = rand(0, TAU);
+    dx = Math.cos(angle);
+    dy = Math.sin(angle);
+    len = 1;
+  }
+  const slowFactor = enemy.slow > 0 || enemy.poison > 0 ? 0.48 : 1;
+  const terrainSpeed = terrainSpeedAt(enemy.x, enemy.y);
+  enemy.moveDir = directionFromVector(dx, dy, enemy.moveDir);
+  enemy.moving = true;
+  enemy.x += (dx / len) * enemy.speed * speedMultiplier * slowFactor * terrainSpeed * dt;
+  enemy.y += (dy / len) * enemy.speed * speedMultiplier * slowFactor * terrainSpeed * dt;
+  const wall = resolveEnemyWallCollision(enemy);
+  if (wall) enemyHitBlockingWall(enemy, wall, 0.35);
+}
+
 function enemyMeleeAttack(enemy, target, targetDistance) {
   if (targetDistance >= enemy.radius + (target.radius || player.radius) + 9) return false;
   enemy.moving = false;
@@ -4578,6 +4676,128 @@ function updateBoarEnemy(enemy, target, dt) {
     enemy.hitTargets = [];
     addFloatText("突進", enemy.x, enemy.y - 38, "#d67b42");
   }
+}
+
+function findGoblinShamanHealTarget(shaman) {
+  const searchRange = (shaman.healRange || 235) + 125;
+  let best = null;
+  let bestScore = Infinity;
+  for (const target of state.enemies) {
+    if (target === shaman || target.hp <= 0 || target.maxHp <= 0 || target.hp >= target.maxHp - 1) continue;
+    const distance = Math.hypot(target.x - shaman.x, target.y - shaman.y);
+    if (distance > searchRange) continue;
+    const hpRatio = clamp(target.hp / target.maxHp, 0, 1);
+    const score = hpRatio * 260 + distance * 0.55 + (target.behavior === "siegeTurtle" ? -70 : 0);
+    if (score < bestScore) {
+      best = target;
+      bestScore = score;
+    }
+  }
+  return best;
+}
+
+function findGoblinShamanThreat(shaman) {
+  const candidates = [
+    ...(player.hiddenTime > 0 ? [] : [player]),
+    ...state.defenders,
+    ...state.workers,
+  ].filter((target) => target.hp > 0);
+  const threatRadius = shaman.threatRadius || 190;
+  const { target, distance } = nearestTargetByDistance(shaman, candidates, (target) => {
+    return Math.hypot(target.x - shaman.x, target.y - shaman.y) - (target.radius || player.radius);
+  });
+  return target && distance < threatRadius ? target : null;
+}
+
+function applyGoblinShamanHeal(shaman, target, dt) {
+  if (!target || target.hp <= 0 || target.hp >= target.maxHp) return false;
+  const distance = Math.hypot(target.x - shaman.x, target.y - shaman.y);
+  if (distance > (shaman.healRange || 235)) return false;
+  const amount = ((shaman.healRate || 24) * Math.sqrt(shaman.scale || 1) + target.maxHp * (shaman.healPercent || 0.006)) * dt;
+  const healed = Math.min(target.maxHp - target.hp, amount);
+  if (healed <= 0) return false;
+  target.hp += healed;
+  shaman.healTarget = target;
+  shaman.healPulse = (shaman.healPulse || 0) + dt * 8;
+  shaman.healFxTimer = Math.max(0, (shaman.healFxTimer || 0) - dt);
+  if (shaman.healFxTimer <= 0) {
+    shaman.healFxTimer = 0.25;
+    addParticles(target.x, target.y, "#a8e05f", 4, 60);
+    if (healed > 3) addFloatText(`+${Math.round(healed)}`, target.x, target.y - 35, "#a8e05f");
+  }
+  return true;
+}
+
+function summonShamanSlime(shaman, threat) {
+  const localSummons = state.enemies.filter((enemy) => (
+    enemy.type === "summonedSlime"
+    && Math.hypot(enemy.x - shaman.x, enemy.y - shaman.y) < 520
+  )).length;
+  if (localSummons >= 8) return false;
+  const awayAngle = threat
+    ? Math.atan2(shaman.y - threat.y, shaman.x - threat.x) + rand(-0.65, 0.65)
+    : rand(0, TAU);
+  const distance = rand(36, 72);
+  const slime = spawnEnemy("summonedSlime", {
+    point: {
+      x: shaman.x + Math.cos(awayAngle) * distance,
+      y: shaman.y + Math.sin(awayAngle) * distance,
+    },
+    scale: Math.max(0.85, (shaman.scale || 1) * 0.9),
+    hpScale: Math.max(0.85, (shaman.scale || 1) * 0.9),
+    noDrop: true,
+  });
+  slime.moveDir = shaman.moveDir;
+  addFloatText("召喚", shaman.x, shaman.y - 44, "#a8e05f");
+  addParticles(slime.x, slime.y, "#7867d8", 14, 120);
+  return true;
+}
+
+function updateGoblinShamanEnemy(enemy, target, dt) {
+  enemy.summonTimer = Math.max(0, (enemy.summonTimer || 0) - dt);
+  const threat = findGoblinShamanThreat(enemy);
+  const healTarget = findGoblinShamanHealTarget(enemy);
+  const healed = applyGoblinShamanHeal(enemy, healTarget, dt);
+
+  if (threat) {
+    moveEnemyAwayFrom(enemy, threat, dt, 1.08);
+    if (enemy.summonTimer <= 0 && summonShamanSlime(enemy, threat)) {
+      const cooldown = enemy.summonCooldown || [3.8, 5.4];
+      enemy.summonTimer = rand(cooldown[0], cooldown[1]);
+    }
+    return;
+  }
+
+  if (healTarget) {
+    const distance = Math.hypot(healTarget.x - enemy.x, healTarget.y - enemy.y);
+    if (distance > (enemy.healRange || 235) * 0.82) {
+      moveEnemyToward(enemy, healTarget, dt, 1.05);
+    } else {
+      enemy.moving = false;
+      enemy.moveDir = directionFromVector(healTarget.x - enemy.x, healTarget.y - enemy.y, enemy.moveDir);
+    }
+    return;
+  }
+
+  const pack = nearestTargetByDistance(enemy, state.enemies.filter((item) => (
+    item !== enemy && item.hp > 0 && item.type !== "summonedSlime" && item.behavior !== "goblinShaman"
+  ))).target;
+  if (pack && Math.hypot(pack.x - enemy.x, pack.y - enemy.y) > 110) {
+    moveEnemyToward(enemy, pack, dt, 0.82);
+    return;
+  }
+
+  if (target) {
+    if (enemyTargetDistance(enemy, target) > 260) moveEnemyToward(enemy, target, dt, 0.62);
+    else {
+      enemy.moving = false;
+      enemy.moveDir = directionFromVector(target.x - enemy.x, target.y - enemy.y, enemy.moveDir);
+    }
+    return;
+  }
+
+  enemy.moving = false;
+  if (!healed) enemy.healTarget = null;
 }
 
 function findSiegeTurtleTarget(enemy) {
@@ -4760,6 +4980,11 @@ function updateEnemies(dt) {
       continue;
     }
 
+    if (enemy.behavior === "goblinShaman") {
+      updateGoblinShamanEnemy(enemy, target, dt);
+      continue;
+    }
+
     if (enemyMeleeAttack(enemy, target, targetDistance)) continue;
     moveEnemyToward(enemy, target, dt);
   }
@@ -4768,8 +4993,11 @@ function updateEnemies(dt) {
   defeated.forEach(awardEnemyDefeat);
   state.enemies = state.enemies.filter((enemy) => enemy.hp > 0);
   if (defeated.length > 0) {
-    for (let i = 0; i < defeated.length; i += 1) {
-      if (Math.random() < 0.4) spawnResource(Math.random() < 0.58 ? "wood" : Math.random() < 0.55 ? "stone" : "iron");
+    for (const enemy of defeated) {
+      const def = enemyDefById(enemy.type);
+      if (!(enemy.noDrop || def.noDrop) && Math.random() < 0.4) {
+        spawnResource(Math.random() < 0.58 ? "wood" : Math.random() < 0.55 ? "stone" : "iron");
+      }
     }
   }
 
@@ -5465,6 +5693,21 @@ function drawEnemy(enemy) {
       ctx.lineWidth = 2;
       ctx.beginPath();
       ctx.arc(p.x, p.y - 9, enemy.radius + 6 + Math.sin(state.time * 7) * 2, 0, TAU);
+      ctx.stroke();
+    }
+    if (enemy.behavior === "goblinShaman" && enemy.healTarget && enemy.healTarget.hp > 0) {
+      const target = worldToScreen(enemy.healTarget);
+      ctx.strokeStyle = "rgba(168,224,95,0.5)";
+      ctx.lineWidth = 2;
+      ctx.setLineDash([4, 5]);
+      ctx.beginPath();
+      ctx.moveTo(p.x, p.y - 17);
+      ctx.lineTo(target.x, target.y - 16);
+      ctx.stroke();
+      ctx.setLineDash([]);
+      ctx.strokeStyle = "rgba(168,224,95,0.62)";
+      ctx.beginPath();
+      ctx.arc(target.x, target.y - 10, 13 + Math.sin(state.time * 9) * 3, 0, TAU);
       ctx.stroke();
     }
     const barWidth = enemy.boss ? Math.max(62, enemy.radius * 2.2) : 38;
