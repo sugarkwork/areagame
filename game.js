@@ -61,8 +61,9 @@ const SAVE_VERSION = 1;
 const ENEMY_HP_MULTIPLIER = 1.5;
 const RESOURCE_HP_MULTIPLIER = 1.5;
 const BASE_DUTY_EXTRA_RADIUS = 0.3;
-const BASE_WORKER_THREAT_RADIUS = 230;
-const BASE_THREAT_RADIUS_PADDING = 80;
+const BASE_DOG_DUTY_EXTRA_RADIUS = 0.9;
+const BASE_WORKER_THREAT_RADIUS = 145;
+const BASE_DOG_THREAT_RADIUS = 95;
 const PLAYER_XP_START = 24;
 const PLAYER_XP_EARLY_TARGET = 150;
 const PLAYER_XP_EARLY_TARGET_LEVEL = 20;
@@ -1531,8 +1532,9 @@ function baseRadius(base) {
   return Math.max(base?.healRadius || defRadius, defRadius);
 }
 
-function baseWorkRadius(base) {
-  return baseRadius(base) * (1 + BASE_DUTY_EXTRA_RADIUS);
+function baseDutyRadiusFor(ally, base) {
+  const extra = ally?.kind === "dog" ? BASE_DOG_DUTY_EXTRA_RADIUS : BASE_DUTY_EXTRA_RADIUS;
+  return baseRadius(base) * (1 + extra);
 }
 
 function assignedBase(ally) {
@@ -1577,7 +1579,7 @@ function allyHomePosition(ally) {
 function withinAssignedBase(ally, target, padding = 0) {
   const base = assignedBase(ally);
   if (!base) return true;
-  return Math.hypot(target.x - base.x, target.y - base.y) <= baseWorkRadius(base) + padding;
+  return Math.hypot(target.x - base.x, target.y - base.y) <= baseDutyRadiusFor(ally, base) + padding;
 }
 
 function clearAllyWorkTargets(ally) {
@@ -1595,19 +1597,21 @@ function isCombatAlly(ally) {
 function assignedBaseThreat(ally) {
   const base = assignedBase(ally);
   if (!base || isCombatAlly(ally)) return null;
-  const baseThreatRadius = baseRadius(base) + BASE_THREAT_RADIUS_PADDING;
+  const threatRadius = ally.kind === "dog" ? BASE_DOG_THREAT_RADIUS : BASE_WORKER_THREAT_RADIUS;
   for (const enemy of state.enemies) {
     if (enemy.hp <= 0) continue;
-    const nearAlly = Math.hypot(enemy.x - ally.x, enemy.y - ally.y) <= BASE_WORKER_THREAT_RADIUS;
-    const nearBase = Math.hypot(enemy.x - base.x, enemy.y - base.y) <= baseThreatRadius;
-    if (nearAlly || nearBase) return enemy;
+    if (Math.hypot(enemy.x - ally.x, enemy.y - ally.y) <= threatRadius) return enemy;
   }
   return null;
 }
 
 function retreatAssignedWorkerIfThreatened(ally, dt) {
   const base = assignedBase(ally);
-  if (!base || isCombatAlly(ally) || !assignedBaseThreat(ally)) return false;
+  const threat = base && !isCombatAlly(ally) ? assignedBaseThreat(ally) : null;
+  if (!base || isCombatAlly(ally) || !threat) {
+    ally.fleeingBase = false;
+    return false;
+  }
   clearAllyWorkTargets(ally);
   const home = allyHomePosition(ally);
   moveAllyToward(ally, home.x, home.y, dt, 10);
@@ -3646,7 +3650,7 @@ function findDefenderHuntTarget(defender, homeX, homeY) {
   const attackRange = (defender.range || 96) * allyRangeMultiplier();
   const melee = defender.attackType === "melee";
   const base = assignedBase(defender);
-  const homeLeash = base ? baseWorkRadius(base) : melee ? 560 : attackRange + 90;
+  const homeLeash = base ? baseDutyRadiusFor(defender, base) : melee ? 560 : attackRange + 90;
   let best = null;
   let bestScore = Infinity;
 
@@ -3679,7 +3683,7 @@ function updateDefenders(dt) {
     const homeX = home.x;
     const homeY = home.y;
     const homeDistance = Math.hypot(homeX - defender.x, homeY - defender.y);
-    const escortLeash = home.base ? baseWorkRadius(home.base) + 40 : defender.attackType === "melee" ? 520 : 230;
+    const escortLeash = home.base ? baseDutyRadiusFor(defender, home.base) + 40 : defender.attackType === "melee" ? 520 : 230;
     const target = homeDistance <= escortLeash
       ? findDefenderHuntTarget(defender, homeX, homeY) || (home.base ? null : findNearestEnemy((defender.range || 96) * allyRangeMultiplier(), defender))
       : null;
@@ -3736,10 +3740,10 @@ function updateDefenders(dt) {
 
 function findNearestResourceForWorker(worker) {
   let best = null;
-  let bestDistance = worker.searchRadius || 380;
   const home = allyHomePosition(worker);
   const center = home.base || player;
-  const allowedRadius = home.base ? baseWorkRadius(home.base) : worker.searchRadius || 380;
+  const allowedRadius = home.base ? baseDutyRadiusFor(worker, home.base) : worker.searchRadius || 380;
+  let bestDistance = home.base ? allowedRadius : worker.searchRadius || 380;
   for (const resource of state.resources) {
     if (!worker.targets.includes(resource.type)) continue;
     if (Math.hypot(resource.x - center.x, resource.y - center.y) > allowedRadius) continue;
@@ -3786,7 +3790,7 @@ function findNearestDamagedBuildingForRepairer(worker) {
   let bestScore = Infinity;
   const home = allyHomePosition(worker);
   const center = home.base || worker;
-  const allowedRadius = home.base ? baseWorkRadius(home.base) : worker.searchRadius || 520;
+  const allowedRadius = home.base ? baseDutyRadiusFor(worker, home.base) : worker.searchRadius || 520;
   for (const building of state.buildings) {
     if (building.hp >= building.maxHp || building.repairReservedBy) continue;
     if (Math.hypot(building.x - center.x, building.y - center.y) > allowedRadius) continue;
@@ -3807,7 +3811,7 @@ function findCriticalRepairTarget(worker, currentTarget) {
   let bestRatio = currentRatio;
   const home = allyHomePosition(worker);
   const center = home.base || worker;
-  const allowedRadius = home.base ? baseWorkRadius(home.base) : worker.searchRadius || 520;
+  const allowedRadius = home.base ? baseDutyRadiusFor(worker, home.base) : worker.searchRadius || 520;
   for (const building of state.buildings) {
     if (building === currentTarget || building.hp >= building.maxHp || building.repairReservedBy) continue;
     if (Math.hypot(building.x - center.x, building.y - center.y) > allowedRadius) continue;
@@ -3930,7 +3934,7 @@ function findHealerTarget(healer) {
   let bestScore = Infinity;
   for (const target of candidates) {
     if (home.base) {
-      if (Math.hypot(target.x - home.base.x, target.y - home.base.y) > baseWorkRadius(home.base)) continue;
+      if (Math.hypot(target.x - home.base.x, target.y - home.base.y) > baseDutyRadiusFor(healer, home.base)) continue;
     } else if (Math.hypot(target.x - player.x, target.y - player.y) > screenRange) {
       continue;
     }
@@ -4003,10 +4007,10 @@ function updateHealer(healer, dt) {
 
 function findNearestDropForDog(dog) {
   let best = null;
-  let bestDistance = dog.searchRadius || 620;
   const home = allyHomePosition(dog);
   const center = home.base || dog;
-  const allowedRadius = home.base ? baseWorkRadius(home.base) : dog.searchRadius || 620;
+  const allowedRadius = home.base ? baseDutyRadiusFor(dog, home.base) : dog.searchRadius || 620;
+  let bestDistance = home.base ? allowedRadius : dog.searchRadius || 620;
   for (const drop of state.drops) {
     if (drop.collected || drop.pickupDelay > 0) continue;
     if (Math.hypot(drop.x - center.x, drop.y - center.y) > allowedRadius) continue;
@@ -4118,7 +4122,7 @@ function updateWorkers(dt) {
     }
 
     const home = allyHomePosition(worker);
-    const tooFarFromHome = Math.hypot(worker.x - home.x, worker.y - home.y) > (home.base ? baseWorkRadius(home.base) + 30 : worker.leash || 430);
+    const tooFarFromHome = Math.hypot(worker.x - home.x, worker.y - home.y) > (home.base ? baseDutyRadiusFor(worker, home.base) + 30 : worker.leash || 430);
     const target = tooFarFromHome ? null : worker.harvestTarget || findNearestResourceForWorker(worker);
     worker.harvestTarget = target;
 
