@@ -64,6 +64,7 @@ const BASE_DUTY_EXTRA_RADIUS = 0.3;
 const BASE_DOG_DUTY_EXTRA_RADIUS = 0.9;
 const BASE_WORKER_THREAT_RADIUS = 145;
 const BASE_DOG_THREAT_RADIUS = 95;
+const BASE_REPAIRER_THREAT_RADIUS = 58;
 const BASE_ENEMY_TOTAL_BONUS = 0.2;
 const PLAYER_XP_START = 24;
 const PLAYER_XP_EARLY_TARGET = 150;
@@ -98,6 +99,13 @@ bossSpriteSheet.onload = () => {
   bossSpritesReady = true;
 };
 bossSpriteSheet.src = "assets/sprites/boss-jrpg-chips.png";
+
+const siegeTurtleSpriteSheet = new Image();
+let siegeTurtleSpritesReady = false;
+siegeTurtleSpriteSheet.onload = () => {
+  siegeTurtleSpritesReady = true;
+};
+siegeTurtleSpriteSheet.src = "assets/sprites/siege-turtle.png";
 
 const healerSpriteSheet = new Image();
 let healerSpritesReady = false;
@@ -290,6 +298,15 @@ const bossSprites = {
       height: 58,
     },
   },
+};
+
+const siegeTurtleSprite = {
+  down: [box(0, 0, 96, 96), box(96, 0, 96, 96), box(192, 0, 96, 96)],
+  right: [box(0, 96, 96, 96), box(96, 96, 96, 96), box(192, 96, 96, 96)],
+  up: [box(0, 192, 96, 96), box(96, 192, 96, 96), box(192, 192, 96, 96)],
+  sideFaces: "right",
+  width: 118,
+  height: 94,
 };
 
 const allySprites = {
@@ -1148,6 +1165,24 @@ const enemyDefs = {
     behavior: "melee",
     boss: true,
   },
+  siegeTurtle: {
+    id: "siegeTurtle",
+    label: "砦亀",
+    color: "#5c8b50",
+    accent: "#c6e28c",
+    radius: 48,
+    hp: 1600,
+    speed: [18, 23],
+    damage: 36,
+    attackCooldown: 1.2,
+    xp: 260,
+    meatChance: 1,
+    meatAmount: [8, 12],
+    weight: 1,
+    behavior: "siegeTurtle",
+    boss: true,
+    knockbackResist: 0.18,
+  },
 };
 
 function resize() {
@@ -1313,6 +1348,10 @@ function drawCustomSpriteFrame(frame, screenX, groundY, width, height, options =
 
 function drawBossSpriteFrame(frame, screenX, groundY, width, height, options = {}) {
   return drawSpriteFrameFrom(bossSpriteSheet, bossSpritesReady, frame, screenX, groundY, width, height, options);
+}
+
+function drawSiegeTurtleSpriteFrame(frame, screenX, groundY, width, height, options = {}) {
+  return drawSpriteFrameFrom(siegeTurtleSpriteSheet, siegeTurtleSpritesReady, frame, screenX, groundY, width, height, options);
 }
 
 function drawHealerSpriteFrame(frame, screenX, groundY, width, height, options = {}) {
@@ -1600,7 +1639,11 @@ function isCombatAlly(ally) {
 function assignedBaseThreat(ally) {
   const base = assignedBase(ally);
   if (!base || isCombatAlly(ally)) return null;
-  const threatRadius = ally.kind === "dog" ? BASE_DOG_THREAT_RADIUS : BASE_WORKER_THREAT_RADIUS;
+  const threatRadius = ally.kind === "dog"
+    ? BASE_DOG_THREAT_RADIUS
+    : ally.kind === "repairer"
+      ? BASE_REPAIRER_THREAT_RADIUS
+      : BASE_WORKER_THREAT_RADIUS;
   for (const enemy of state.enemies) {
     if (enemy.hp <= 0) continue;
     if (Math.hypot(enemy.x - ally.x, enemy.y - ally.y) <= threatRadius) return enemy;
@@ -2982,6 +3025,38 @@ function eventWaveDef(wave) {
   return wave % 10 === 0 ? bossWaveDef(wave) : raidWaveDef(wave);
 }
 
+function siegeTurtleScale(wave) {
+  return 1 + Math.max(0, wave - 6) * 0.055;
+}
+
+function addSiegeTurtleToWaveDef(def, wave) {
+  if (wave % 6 !== 0) return def;
+  const turtleDetail = "砦亀が拠点だけを目指して進みます。罠で止めながら削ってください。";
+  const total = def.total + 1;
+  return {
+    ...def,
+    total,
+    maxActive: def.maxActive + 1,
+    timeout: def.timeout + 35,
+    fixedSpawns: [
+      ...(def.fixedSpawns || []),
+      { id: "siegeTurtle", count: 1, scale: siegeTurtleScale(wave) },
+    ],
+    event: def.event
+      ? {
+        ...def.event,
+        label: `${def.event.label} + 砦亀`,
+        detail: `${stripEnemyCountDetail(def.event.detail)} ${turtleDetail} 敵数 ${total}体`,
+      }
+      : {
+        type: "siegeTurtle",
+        label: "砦亀襲来",
+        title: `第${wave}ウェーブ 砦亀襲来`,
+        detail: `${turtleDetail} 敵数 ${total}体`,
+      },
+  };
+}
+
 function waveBaseCountForScaling() {
   const count = Number.isFinite(state.wave.baseCountAtStart)
     ? state.wave.baseCountAtStart
@@ -3021,27 +3096,27 @@ function scaleWaveDefForBases(def) {
 function currentWaveDef() {
   const wave = state.wave.index;
   const eventDef = eventWaveDef(wave);
-  if (eventDef) return scaleWaveDefForBases(eventDef);
+  if (eventDef) return scaleWaveDefForBases(addSiegeTurtleToWaveDef(eventDef, wave));
   if (wave === 1) {
-    return scaleWaveDefForBases({
+    return scaleWaveDefForBases(addSiegeTurtleToWaveDef({
       total: 10,
       maxActive: 1,
       spawnInterval: 2.2,
       timeout: 120,
       enemies: [{ id: "redSlime", weight: 1 }],
-    });
+    }, wave));
   }
   if (wave === 2) {
-    return scaleWaveDefForBases({
+    return scaleWaveDefForBases(addSiegeTurtleToWaveDef({
       total: 20,
       maxActive: 2,
       spawnInterval: 1.9,
       timeout: 140,
       enemies: [{ id: "redSlime", weight: 1 }],
-    });
+    }, wave));
   }
   if (wave === 3) {
-    return scaleWaveDefForBases({
+    return scaleWaveDefForBases(addSiegeTurtleToWaveDef({
       total: 28,
       maxActive: 3,
       spawnInterval: 1.8,
@@ -3052,10 +3127,10 @@ function currentWaveDef() {
         { id: "greenSlime", weight: 3 },
         { id: "goblin", weight: 3 },
       ],
-    });
+    }, wave));
   }
   const extra = wave - 4;
-  return scaleWaveDefForBases({
+  return scaleWaveDefForBases(addSiegeTurtleToWaveDef({
     total: 34 + extra * 8,
     maxActive: Math.min(8, 4 + Math.floor(extra / 2)),
     spawnInterval: Math.max(0.9, 1.65 - extra * 0.06),
@@ -3069,7 +3144,7 @@ function currentWaveDef() {
       { id: "boar", weight: 2 + extra * 0.18 },
       { id: "goblinArcher", weight: 2 + extra * 0.16 },
     ],
-  });
+  }, wave));
 }
 
 function weightedEnemyId(entries) {
@@ -3160,6 +3235,7 @@ function spawnEnemy(type = "redSlime", options = {}) {
     damage: Math.round(def.damage * (0.9 + waveScale * 0.1)),
     xp: Math.round(def.xp * waveScale),
     boss: Boolean(def.boss || options.boss),
+    scale: waveScale,
     attackCooldown: def.attackCooldown,
     behavior: def.behavior,
     range: def.range || 0,
@@ -3170,6 +3246,9 @@ function spawnEnemy(type = "redSlime", options = {}) {
     chargeState: def.behavior === "boar" ? "windup" : null,
     chargeDir: { x: 0, y: 0 },
     hitTargets: [],
+    knockbackResist: def.knockbackResist == null ? 1 : def.knockbackResist,
+    crushFxTimer: 0,
+    trampleTimer: 0,
     moveDir: "down",
     moving: true,
     bleed: 0,
@@ -3342,8 +3421,9 @@ function damageEnemy(enemy, damage, source, options = {}) {
     const dx = enemy.x - source.x;
     const dy = enemy.y - source.y;
     const len = Math.hypot(dx, dy) || 1;
-    enemy.x += (dx / len) * knockback * 0.07;
-    enemy.y += (dy / len) * knockback * 0.07;
+    const knockbackResist = enemy.knockbackResist == null ? 1 : enemy.knockbackResist;
+    enemy.x += (dx / len) * knockback * 0.07 * knockbackResist;
+    enemy.y += (dy / len) * knockback * 0.07 * knockbackResist;
   }
   if (options.lifesteal) {
     const heal = damage * options.lifesteal;
@@ -4421,6 +4501,113 @@ function updateBoarEnemy(enemy, target, dt) {
   }
 }
 
+function findSiegeTurtleTarget(enemy) {
+  const bases = baseBuildings();
+  const targets = bases.length > 0
+    ? bases
+    : state.buildings.filter((building) => building.hp > 0);
+  let best = null;
+  let bestDistance = Infinity;
+  for (const target of targets) {
+    const d = Math.hypot(target.x - enemy.x, target.y - enemy.y);
+    if (d < bestDistance) {
+      best = target;
+      bestDistance = d;
+    }
+  }
+  return best;
+}
+
+function isSiegeTurtleCrushing(enemy) {
+  return state.buildings.some((building) => (
+    building.hp > 0
+    && Math.hypot(building.x - enemy.x, building.y - enemy.y) < enemy.radius + building.radius + 16
+  ));
+}
+
+function crushDamageRateFor(building, enemy) {
+  const scale = Math.sqrt(enemy.scale || 1);
+  if (building.id === "wall") return 72 * scale;
+  if (building.id === "base") return 58 * scale;
+  return 62 * scale;
+}
+
+function applySiegeTurtleCrush(enemy, dt) {
+  let crushed = false;
+  enemy.crushFxTimer = Math.max(0, (enemy.crushFxTimer || 0) - dt);
+  for (const building of state.buildings) {
+    if (building.hp <= 0) continue;
+    const d = Math.hypot(building.x - enemy.x, building.y - enemy.y);
+    if (d > enemy.radius + building.radius + 16) continue;
+    building.hp -= crushDamageRateFor(building, enemy) * dt;
+    crushed = true;
+    if (enemy.crushFxTimer <= 0) {
+      addFloatText("踏み潰し", building.x, building.y - 56, "#a78b69");
+      addParticles(building.x, building.y, "#a78b69", building.id === "wall" ? 12 : 16, 125);
+    }
+  }
+  if (crushed && enemy.crushFxTimer <= 0) enemy.crushFxTimer = 0.58;
+  return crushed;
+}
+
+function knockbackEntityFrom(target, source, distance) {
+  const dx = target.x - source.x;
+  const dy = target.y - source.y;
+  const len = Math.hypot(dx, dy) || 1;
+  target.x += (dx / len) * distance;
+  target.y += (dy / len) * distance;
+}
+
+function applySiegeTurtleFootDamage(enemy, dt) {
+  enemy.trampleTimer = Math.max(0, (enemy.trampleTimer || 0) - dt);
+  if (enemy.trampleTimer > 0) return;
+  const targets = [
+    ...(player.hiddenTime > 0 ? [] : [player]),
+    ...state.defenders,
+    ...state.workers,
+  ].filter((target) => target.hp > 0);
+  let hit = false;
+  const damage = (enemy.damage || 36) * Math.sqrt(enemy.scale || 1) * 1.25;
+  for (const target of targets) {
+    const d = Math.hypot(target.x - enemy.x, target.y - enemy.y);
+    if (d > enemy.radius + (target.radius || player.radius) + 16) continue;
+    applyDamage(target, damage, enemy, "#d67b42");
+    knockbackEntityFrom(target, enemy, 125);
+    addFloatText("クリティカル", target.x, target.y - 54, "#ffb24d");
+    hit = true;
+  }
+  if (hit) {
+    enemy.trampleTimer = 0.85;
+    addParticles(enemy.x, enemy.y, "#d67b42", 16, 120);
+  }
+}
+
+function updateSiegeTurtleEnemy(enemy, dt) {
+  const target = findSiegeTurtleTarget(enemy);
+  const crushing = isSiegeTurtleCrushing(enemy);
+  applySiegeTurtleCrush(enemy, dt);
+  applySiegeTurtleFootDamage(enemy, dt);
+  if (!target) {
+    enemy.moving = false;
+    return;
+  }
+
+  const dx = target.x - enemy.x;
+  const dy = target.y - enemy.y;
+  const len = Math.hypot(dx, dy) || 1;
+  enemy.moveDir = directionFromVector(dx, dy, enemy.moveDir);
+  if (enemy.rooted > 0) {
+    enemy.moving = false;
+    return;
+  }
+  const slowFactor = enemy.slow > 0 || enemy.poison > 0 ? 0.48 : 1;
+  const terrainSpeed = terrainSpeedAt(enemy.x, enemy.y);
+  const crushSpeed = crushing ? 0.32 : 1;
+  enemy.moving = true;
+  enemy.x += (dx / len) * enemy.speed * slowFactor * terrainSpeed * crushSpeed * dt;
+  enemy.y += (dy / len) * enemy.speed * slowFactor * terrainSpeed * crushSpeed * dt;
+}
+
 function updateEnemies(dt) {
   updateWave(dt);
 
@@ -4443,6 +4630,11 @@ function updateEnemies(dt) {
     }
     if (enemy.poison > 0) {
       enemy.hp -= 7 * dt;
+    }
+
+    if (enemy.behavior === "siegeTurtle") {
+      updateSiegeTurtleEnemy(enemy, dt);
+      continue;
     }
 
     if (enemy.confused > 0) {
@@ -5122,6 +5314,31 @@ function drawPlayer() {
 function drawEnemy(enemy) {
   const p = worldToScreen(enemy);
   const def = enemyDefById(enemy.type);
+  if (enemy.type === "siegeTurtle" && siegeTurtleSpritesReady) {
+    const frame = spriteFrame(siegeTurtleSprite, enemy.moveDir, enemy.moving, 3.6);
+    drawSpriteShadow(p.x, p.y + 22, siegeTurtleSprite.width * 0.7, 17, 0.3);
+    drawSiegeTurtleSpriteFrame(frame.frame, p.x, p.y + 30, frame.width, frame.height, { flip: frame.flip });
+    if (enemy.hurtFlash > 0) {
+      ctx.fillStyle = "rgba(255,255,190,0.24)";
+      ctx.beginPath();
+      ctx.arc(p.x, p.y + 2, enemy.radius + 12, 0, TAU);
+      ctx.fill();
+    }
+    if (enemy.rooted > 0 || enemy.slow > 0 || enemy.poison > 0) {
+      ctx.strokeStyle = enemy.poison > 0 ? "#a8e05f" : "#d8e6d3";
+      ctx.lineWidth = 3;
+      ctx.beginPath();
+      ctx.arc(p.x, p.y + 4, enemy.radius + 10, 0, TAU);
+      ctx.stroke();
+    }
+    const barWidth = Math.max(96, enemy.radius * 2.4);
+    const barY = p.y - siegeTurtleSprite.height + 18;
+    ctx.fillStyle = "rgba(0,0,0,0.6)";
+    ctx.fillRect(p.x - barWidth / 2, barY, barWidth, 6);
+    ctx.fillStyle = "#e7564f";
+    ctx.fillRect(p.x - barWidth / 2, barY, barWidth * clamp(enemy.hp / enemy.maxHp, 0, 1), 6);
+    return;
+  }
   const bossSprite = bossSprites.enemies[enemy.type];
   if (bossSprite && bossSpritesReady) {
     const frame = spriteFrame(bossSprite, enemy.moveDir, enemy.moving || enemy.chargeState === "charge", 7);
