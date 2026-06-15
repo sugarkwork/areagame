@@ -105,7 +105,14 @@ let siegeTurtleSpritesReady = false;
 siegeTurtleSpriteSheet.onload = () => {
   siegeTurtleSpritesReady = true;
 };
-siegeTurtleSpriteSheet.src = "assets/sprites/siege-turtle.png";
+siegeTurtleSpriteSheet.src = "assets/sprites/siege-turtle.png?v=20260616-0154";
+
+const baseBuildingSpriteImage = new Image();
+let baseBuildingSpriteReady = false;
+baseBuildingSpriteImage.onload = () => {
+  baseBuildingSpriteReady = true;
+};
+baseBuildingSpriteImage.src = "assets/sprites/base-jrpg-building.png?v=20260616-0154";
 
 const healerSpriteSheet = new Image();
 let healerSpritesReady = false;
@@ -344,6 +351,12 @@ const siegeTurtleSprite = {
   sideFaces: "right",
   width: 236,
   height: 188,
+};
+
+const baseBuildingSprite = {
+  frame: box(0, 0, 128, 128),
+  width: 124,
+  height: 124,
 };
 
 const allySprites = {
@@ -910,7 +923,7 @@ const buildDefs = [
   {
     id: "base",
     label: "拠点",
-    icon: "assets/icons/build-base.png",
+    icon: "assets/icons/build-base.png?v=20260616-0154",
     type: "building",
     rarity: "uncommon",
     weight: 6,
@@ -1458,6 +1471,10 @@ function drawBossSpriteFrame(frame, screenX, groundY, width, height, options = {
 
 function drawSiegeTurtleSpriteFrame(frame, screenX, groundY, width, height, options = {}) {
   return drawSpriteFrameFrom(siegeTurtleSpriteSheet, siegeTurtleSpritesReady, frame, screenX, groundY, width, height, options);
+}
+
+function drawBaseBuildingSpriteFrame(frame, screenX, groundY, width, height, options = {}) {
+  return drawSpriteFrameFrom(baseBuildingSpriteImage, baseBuildingSpriteReady, frame, screenX, groundY, width, height, options);
 }
 
 function drawHealerSpriteFrame(frame, screenX, groundY, width, height, options = {}) {
@@ -5923,6 +5940,16 @@ function drawTrap(trap) {
 
 function drawBuilding(building) {
   const p = worldToScreen(building);
+  if (building.id === "base" && baseBuildingSpriteReady) {
+    const groundY = p.y + 52;
+    drawSpriteShadow(p.x, groundY - 7, baseBuildingSprite.width * 0.72, 17, 0.26);
+    drawBaseBuildingSpriteFrame(baseBuildingSprite.frame, p.x, groundY, baseBuildingSprite.width, baseBuildingSprite.height);
+    ctx.fillStyle = "rgba(0,0,0,0.48)";
+    ctx.fillRect(p.x - 36, p.y - 68, 72, 6);
+    ctx.fillStyle = "#65c47b";
+    ctx.fillRect(p.x - 36, p.y - 68, 72 * clamp(building.hp / building.maxHp, 0, 1), 6);
+    return;
+  }
   const sprite = sprites.buildings[building.id];
   if (sprite && spritesReady) {
     const groundY = p.y + (building.id === "tower" ? 56 : 42);
