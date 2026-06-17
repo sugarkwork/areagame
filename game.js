@@ -2518,7 +2518,7 @@ function updateSkillTimers(dt) {
 
 function actionButtonMarkup({ icon, label, detail = "", cost }) {
   const { entries } = enrichCost(cost);
-  const iconMarkup = /\.png$/i.test(icon)
+  const iconMarkup = /\.(png|jpe?g|webp|gif|svg)(\?.*)?$/i.test(icon)
     ? `<img src="${icon}" alt="">`
     : icon;
   const costs = entries.map((entry) => {
