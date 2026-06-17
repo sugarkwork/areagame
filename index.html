@@ -4,7 +4,8 @@
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <title>Frontier Ring</title>
-    <link rel="stylesheet" href="style.css?v=20260616-0119" />
+    <link rel="icon" type="image/png" href="assets/sprites/icons/knife.png" />
+    <link rel="stylesheet" href="style.css?v=20260617-1558" />
     <style>
       [hidden] {
         display: none !important;
@@ -44,6 +45,8 @@
           <small id="equippedWeaponMeta">武器を選択</small>
         </span>
       </button>
+
+      <div id="activeSkillSlots" class="hud active-skill-slots" hidden></div>
 
       <button id="saveButton" class="hud save-button" type="button" aria-label="セーブJSONを書き出す">
         <span>保存</span>
@@ -129,6 +132,6 @@
       <div id="toast" class="toast" hidden></div>
     </main>
 
-    <script src="game.js?v=20260616-0154"></script>
+    <script src="game.js?v=20260617-1558"></script>
   </body>
 </html>

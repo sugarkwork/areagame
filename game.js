@@ -17,6 +17,7 @@ const ui = {
   equippedWeaponIcon: document.querySelector("#equippedWeaponIcon"),
   equippedWeaponName: document.querySelector("#equippedWeaponName"),
   equippedWeaponMeta: document.querySelector("#equippedWeaponMeta"),
+  activeSkillSlots: document.querySelector("#activeSkillSlots"),
   saveButton: document.querySelector("#saveButton"),
   saveDropOverlay: document.querySelector("#saveDropOverlay"),
   quickMenuButton: document.querySelector("#quickMenuButton"),
@@ -69,6 +70,8 @@ const BASE_ENEMY_TOTAL_BONUS = 0.2;
 const PLAYER_XP_START = 24;
 const PLAYER_XP_EARLY_TARGET = 150;
 const PLAYER_XP_EARLY_TARGET_LEVEL = 20;
+const ACTIVE_SKILL_SLOT_KEYS = ["KeyQ", "KeyR", "KeyF"];
+const ACTIVE_SKILL_SLOT_LABELS = ["Q", "R", "F"];
 
 function playerXpRequired(level) {
   const earlyLevel = clamp(level, 1, PLAYER_XP_EARLY_TARGET_LEVEL);
@@ -166,6 +169,7 @@ const weaponIconSources = {
   knife: "assets/icons/weapon-knife.png",
   ironSword: "assets/icons/weapon-sword.png",
   duelistBlade: "assets/icons/weapon-duelist.png",
+  cureWand: "assets/sprites/icons/cureWand.png",
 };
 for (const [key, src] of Object.entries(weaponIconSources)) {
   weaponIconImages[key] = new Image();
@@ -447,6 +451,7 @@ const state = {
   resources: [],
   enemies: [],
   projectiles: [],
+  lightningBolts: [],
   traps: [],
   buildings: [],
   nextBuildingUid: 1,
@@ -498,6 +503,8 @@ const player = {
     allyShotSpeed: 0,
     allyRange: 0,
     predictiveShot: 0,
+    combo: 0,
+    lightningBolt: 0,
   },
   unlocks: {
     weapons: { knife: true },
@@ -506,6 +513,7 @@ const player = {
     hires: {},
   },
   skillCooldowns: {},
+  activeSkillHistory: [],
   hiddenTime: 0,
   axeLevel: 1,
   pickaxeLevel: 1,
@@ -647,6 +655,16 @@ const skillDefs = [
     cooldown: (level) => Math.max(10, 20 - level * 0.6),
   },
   {
+    key: "lightningBolt",
+    name: "ライトニングボルト",
+    type: "active",
+    icon: "assets/icons/skill-lightning-bolt.png",
+    rarity: "rare",
+    weight: 5,
+    summary: (level) => `近い敵 ${lightningTargetCount(level)}体へ落雷 / 威力 ${lightningDamage(level)}`,
+    cooldown: (level) => Math.max(7.5, 15 - level * 0.45),
+  },
+  {
     key: "axeMastery",
     name: "斧強化",
     type: "passive",
@@ -718,6 +736,15 @@ const skillDefs = [
     rarity: "uncommon",
     weight: 7,
     summary: (level) => `味方の最大HPと攻撃力 +${level * 7}%`,
+  },
+  {
+    key: "combo",
+    name: "連撃",
+    type: "passive",
+    icon: "assets/icons/skill-combo.png",
+    rarity: "rare",
+    weight: 5,
+    summary: (level) => `味方が ${level * 10}% の確率で2回攻撃します`,
   },
   {
     key: "lucky",
@@ -834,6 +861,23 @@ const weapons = [
     rarity: "rare",
     weight: 4,
     rewardSummary: "範囲ダメージを持つ魔法武器",
+    enchants: { damage: 0, speed: 0, knockback: 0, bleed: 0, lifesteal: 0, projectileSpeed: 0, range: 0, homing: 0 },
+  },
+  {
+    id: "cureWand",
+    name: "キュアワンド",
+    type: "魔法",
+    damage: 0,
+    heal: 22,
+    range: 330,
+    rate: 1.05,
+    knockback: 0,
+    bleedChance: 0,
+    lifesteal: 0,
+    projectileSpeed: 420,
+    rarity: "rare",
+    weight: 4,
+    rewardSummary: "負傷した仲間へ、コスト無しで回復の光弾を放つ",
     enchants: { damage: 0, speed: 0, knockback: 0, bleed: 0, lifesteal: 0, projectileSpeed: 0, range: 0, homing: 0 },
   },
 ];
@@ -1699,6 +1743,68 @@ function allyShotSpeedMultiplier() {
   return 1 + skillLevel("allyShotSpeed") * 0.1;
 }
 
+function allyComboChance() {
+  return clamp(skillLevel("combo") * 0.1, 0, 1);
+}
+
+function lightningTargetCount(level) {
+  return 1 + Math.floor((Math.max(1, level) - 1) / 3);
+}
+
+function lightningDamage(level) {
+  return 42 + Math.max(1, level) * 14;
+}
+
+function addLightningBoltEffect(target) {
+  const points = [];
+  const steps = 6;
+  for (let i = 0; i <= steps; i += 1) {
+    const t = i / steps;
+    points.push({
+      x: rand(-22, 22) * Math.sin(t * Math.PI),
+      y: -260 + t * 246 + rand(-7, 7),
+    });
+  }
+  points[0].x = 0;
+  points[steps].x = 0;
+  points[steps].y = -10;
+  state.lightningBolts.push({
+    x: target.x,
+    y: target.y,
+    points,
+    age: 0,
+    life: 0.26,
+  });
+}
+
+function injuredAllyTargets() {
+  return [...state.defenders, ...state.workers]
+    .filter((ally) => ally.hp > 0 && ally.maxHp > 0 && ally.hp < ally.maxHp - 1);
+}
+
+function findNearestInjuredAlly(maxDistance = Infinity, origin = player) {
+  let best = null;
+  let bestDistance = maxDistance;
+  for (const ally of injuredAllyTargets()) {
+    const d = Math.hypot(ally.x - origin.x, ally.y - origin.y);
+    if (d < bestDistance) {
+      best = ally;
+      bestDistance = d;
+    }
+  }
+  return best;
+}
+
+function healAlly(target, amount, color = "#a8e05f") {
+  if (!target || target.hp <= 0 || target.hp >= target.maxHp) return 0;
+  const healed = Math.min(target.maxHp - target.hp, Math.max(0, amount));
+  if (healed <= 0) return 0;
+  target.hp += healed;
+  addFloatText(`+${Math.round(healed)}`, target.x, target.y - 34, color);
+  addParticles(target.x, target.y, color, 7, 70);
+  return healed;
+}
+
 function baseBuildings() {
   return state.buildings.filter((building) => building.id === "base" && building.hp > 0);
 }
@@ -1916,6 +2022,76 @@ function acquiredSkillDefs() {
 
 function hasAcquiredSkills() {
   return acquiredSkillDefs().length > 0;
+}
+
+function sanitizeActiveSkillHistory(history = player.activeSkillHistory) {
+  const seen = new Set();
+  return (Array.isArray(history) ? history : [])
+    .filter((key) => {
+      const def = skillDefs.find((item) => item.key === key);
+      if (!def || def.type !== "active" || skillLevel(key) <= 0 || seen.has(key)) return false;
+      seen.add(key);
+      return true;
+    })
+    .slice(-3);
+}
+
+function recordActiveSkillUse(key) {
+  const def = skillDefs.find((item) => item.key === key);
+  if (!def || def.type !== "active" || skillLevel(key) <= 0) return;
+  const history = sanitizeActiveSkillHistory().filter((item) => item !== key);
+  history.push(key);
+  player.activeSkillHistory = history.slice(-3);
+  renderActiveSkillSlots();
+}
+
+function renderActiveSkillSlots() {
+  if (!ui.activeSkillSlots) return;
+  player.activeSkillHistory = sanitizeActiveSkillHistory();
+  const slots = [...player.activeSkillHistory].reverse();
+  ui.activeSkillSlots.hidden = slots.length === 0;
+  const signature = slots.join("|");
+  if (ui.activeSkillSlots.dataset.signature !== signature) {
+    ui.activeSkillSlots.dataset.signature = signature;
+    ui.activeSkillSlots.innerHTML = "";
+    slots.forEach((key, index) => {
+      const def = skillDefs.find((item) => item.key === key);
+      if (!def) return;
+      const button = document.createElement("button");
+      button.type = "button";
+      button.className = "active-skill-slot";
+      button.dataset.skillKey = key;
+      button.innerHTML = `
+        <img src="${def.icon}" alt="">
+        <span>${ACTIVE_SKILL_SLOT_LABELS[index]}</span>
+      `;
+      button.addEventListener("click", (event) => {
+        event.stopPropagation();
+        activateSkill(key);
+      });
+      ui.activeSkillSlots.appendChild(button);
+    });
+  }
+
+  for (const button of ui.activeSkillSlots.querySelectorAll(".active-skill-slot")) {
+    const key = button.dataset.skillKey;
+    const def = skillDefs.find((item) => item.key === key);
+    if (!def) continue;
+    const cooldown = player.skillCooldowns[key] || 0;
+    const level = skillLevel(key);
+    button.title = `${def.name} LV${level}`;
+    button.disabled = cooldown > 0 || level <= 0;
+    let cooldownLabel = button.querySelector("b");
+    if (cooldown > 0) {
+      if (!cooldownLabel) {
+        cooldownLabel = document.createElement("b");
+        button.appendChild(cooldownLabel);
+      }
+      cooldownLabel.textContent = cooldown.toFixed(1);
+    } else if (cooldownLabel) {
+      cooldownLabel.remove();
+    }
+  }
 }
 
 function rewardWeight(item) {
@@ -2304,7 +2480,32 @@ function activateSkill(key) {
     addFloatText("混乱", player.x, player.y - 48, "#f0a6ff");
   }
 
+  if (key === "lightningBolt") {
+    const radius = 340 + level * 28;
+    const count = lightningTargetCount(level);
+    const damage = lightningDamage(level);
+    const targets = state.enemies
+      .filter((enemy) => enemy.hp > 0 && Math.hypot(enemy.x - player.x, enemy.y - player.y) <= radius)
+      .sort((a, b) => Math.hypot(a.x - player.x, a.y - player.y) - Math.hypot(b.x - player.x, b.y - player.y))
+      .slice(0, count);
+    if (targets.length === 0) {
+      showToast("ライトニングボルトの対象がいません");
+      return;
+    }
+    for (const enemy of targets) {
+      addLightningBoltEffect(enemy);
+      damageEnemy(enemy, damage, player, {
+        knockback: 95 + level * 12,
+        color: "#f6d35f",
+      });
+      addParticles(enemy.x, enemy.y, "#f6d35f", 18, 190);
+    }
+    addFloatText("ライトニング", player.x, player.y - 52, "#f6d35f");
+  }
+
+  recordActiveSkillUse(key);
   player.skillCooldowns[key] = def.cooldown(level);
+  renderActiveSkillSlots();
   closeWorldMenu();
 }
 
@@ -2658,6 +2859,7 @@ function createSaveData() {
       xpNext: player.xpNext,
       resources: resourceSnapshot(),
       skills: clonePlain(player.skills),
+      activeSkillHistory: sanitizeActiveSkillHistory(),
       unlocks: clonePlain(player.unlocks),
       axeLevel: player.axeLevel,
       pickaxeLevel: player.pickaxeLevel,
@@ -2766,6 +2968,7 @@ function restorePlayer(savedPlayer = {}) {
   player.hiddenTime = 0;
   player.attackTimer = 0;
   player.attackFx = null;
+  player.activeSkillHistory = sanitizeActiveSkillHistory(saved.activeSkillHistory);
   player.harvestTarget = null;
   player.harvestPulse = 0;
   player.harvesting = false;
@@ -2927,6 +3130,7 @@ function clearRuntimeWorldState() {
   state.skillChoice.pending = 0;
   state.enemies = [];
   state.projectiles = [];
+  state.lightningBolts = [];
   state.resources = [];
   state.drops = [];
   state.flyItems = [];
@@ -3484,6 +3688,12 @@ function weaponDamage(weapon) {
   return Math.round((weapon.damage + enchantLevel(weapon, "damage") * 5) * (1 + (player.level - 1) * 0.045));
 }
 
+function weaponHeal(weapon) {
+  const base = weapon.heal || 0;
+  if (base <= 0) return 0;
+  return Math.round((base + enchantLevel(weapon, "damage") * 4) * (1 + (player.level - 1) * 0.035));
+}
+
 function weaponRate(weapon) {
   return weapon.rate * (1 + enchantLevel(weapon, "speed") * 0.11);
 }
@@ -3513,6 +3723,11 @@ function weaponLifesteal(weapon) {
 
 function weaponHoming(weapon) {
   return enchantLevel(weapon, "homing");
+}
+
+function weaponSummaryText(weapon) {
+  const power = weapon.heal ? `回復${weaponHeal(weapon)}` : `攻${weaponDamage(weapon)}`;
+  return `${weapon.type} / ${power} 速${weaponRate(weapon).toFixed(1)} 射程${weaponRange(weapon)}`;
 }
 
 function harvestRate(resource) {
@@ -3694,20 +3909,41 @@ function playerAttack(dt) {
   const weapon = equippedWeapon();
   player.attackTimer -= dt;
   const range = weaponRange(weapon);
-  const target = findNearestEnemy(range);
+  const target = weapon.heal ? findNearestInjuredAlly(range, player) : findNearestEnemy(range);
   if (!target || player.attackTimer > 0) return;
 
   player.attackTimer = 1 / weaponRate(weapon);
+  const dx = target.x - player.x;
+  const dy = target.y - player.y;
+  const len = Math.hypot(dx, dy) || 1;
+  player.facing = { x: dx / len, y: dy / len };
+
+  if (weapon.heal) {
+    const projectileSpeed = weaponProjectileSpeed(weapon);
+    state.projectiles.push({
+      kind: "heal",
+      target,
+      x: player.x + player.facing.x * 22,
+      y: player.y + player.facing.y * 22,
+      vx: player.facing.x * projectileSpeed,
+      vy: player.facing.y * projectileSpeed,
+      life: range / projectileSpeed,
+      radius: 8,
+      heal: weaponHeal(weapon),
+      color: "#a8e05f",
+      speed: projectileSpeed,
+      owner: player,
+    });
+    addParticles(player.x + player.facing.x * 20, player.y + player.facing.y * 20, "#a8e05f", 5, 55);
+    return;
+  }
+
   const options = {
     bleedChance: weaponBleed(weapon),
     lifesteal: weaponLifesteal(weapon),
     knockback: weaponKnockback(weapon),
   };
   const damage = weaponDamage(weapon);
-  const dx = target.x - player.x;
-  const dy = target.y - player.y;
-  const len = Math.hypot(dx, dy) || 1;
-  player.facing = { x: dx / len, y: dy / len };
 
   if (weapon.type === "近接") {
     startAttackFx(player, target, weapon.id);
@@ -3734,8 +3970,45 @@ function playerAttack(dt) {
   }
 }
 
+function updateHealProjectile(projectile, dt) {
+  if (!projectile.target || projectile.target.hp <= 0 || projectile.target.hp >= projectile.target.maxHp - 0.5) {
+    projectile.target = findNearestInjuredAlly(240, projectile);
+  }
+
+  const target = projectile.target;
+  const speed = projectile.speed || Math.hypot(projectile.vx, projectile.vy) || 360;
+  if (target) {
+    const dx = target.x - projectile.x;
+    const dy = target.y - projectile.y;
+    const len = Math.hypot(dx, dy) || 1;
+    const turn = clamp(dt * 7, 0, 0.72);
+    const nx = projectile.vx / speed;
+    const ny = projectile.vy / speed;
+    const tx = dx / len;
+    const ty = dy / len;
+    const vx = nx + (tx - nx) * turn;
+    const vy = ny + (ty - ny) * turn;
+    const vLen = Math.hypot(vx, vy) || 1;
+    projectile.vx = (vx / vLen) * speed;
+    projectile.vy = (vy / vLen) * speed;
+  }
+
+  projectile.x += projectile.vx * dt;
+  projectile.y += projectile.vy * dt;
+  projectile.life -= dt;
+
+  if (target && Math.hypot(target.x - projectile.x, target.y - projectile.y) < (target.radius || 18) + projectile.radius + 5) {
+    healAlly(target, projectile.heal || 0, projectile.color || "#a8e05f");
+    projectile.life = 0;
+  }
+}
+
 function updateProjectiles(dt) {
   for (const projectile of state.projectiles) {
+    if (projectile.kind === "heal") {
+      updateHealProjectile(projectile, dt);
+      continue;
+    }
     applyProjectileHoming(projectile, dt);
     projectile.x += projectile.vx * dt;
     projectile.y += projectile.vy * dt;
@@ -3977,6 +4250,53 @@ function findDefenderHuntTarget(defender, homeX, homeY) {
   return best;
 }
 
+function defenderAttackOptions(defender) {
+  return {
+    knockback: defender.knockback || 45,
+    bleedChance: defender.attackType === "melee" ? 0.04 : 0,
+    color: defender.attackType === "magic" ? "#7dd3ff" : "#f1b84b",
+  };
+}
+
+function performDefenderAttack(defender, target, attackRange) {
+  if (!target || target.hp <= 0) return false;
+  const options = defenderAttackOptions(defender);
+  if (defender.attackType === "melee") {
+    startAttackFx(defender, target, defender.weaponId || "ironSword");
+    damageEnemy(target, allyDamage(defender) || 10, defender, options);
+    addParticles(target.x, target.y, "#f6f0db", 5, 80);
+    return true;
+  }
+
+  const speed = (defender.projectileSpeed || 420) * allyShotSpeedMultiplier();
+  const aim = aimPointForTarget(defender, target, speed, skillLevel("predictiveShot"));
+  const aimDx = aim.x - defender.x;
+  const aimDy = aim.y - defender.y;
+  const aimLen = Math.hypot(aimDx, aimDy) || 1;
+  state.projectiles.push({
+    x: defender.x + (aimDx / aimLen) * 18,
+    y: defender.y + (aimDy / aimLen) * 18,
+    vx: (aimDx / aimLen) * speed,
+    vy: (aimDy / aimLen) * speed,
+    life: attackRange / speed,
+    radius: defender.attackType === "magic" ? 8 : 5,
+    damage: allyDamage(defender) || 10,
+    color: defender.attackType === "magic" ? "#7dd3ff" : "#f1b84b",
+    splash: defender.splash || 0,
+    owner: defender,
+    options,
+  });
+  return true;
+}
+
+function maybeDefenderCombo(defender, target, attackRange) {
+  const chance = allyComboChance();
+  if (chance <= 0 || !target || target.hp <= 0 || Math.random() >= chance) return;
+  addFloatText("連撃", defender.x, defender.y - 46, "#f6d35f");
+  addParticles(defender.x, defender.y, "#f6d35f", 7, 70);
+  performDefenderAttack(defender, target, attackRange);
+}
+
 function updateDefenders(dt) {
   for (const defender of state.defenders) {
     syncAllyStats(defender);
@@ -4005,34 +4325,8 @@ function updateDefenders(dt) {
       defender.moving = false;
       if (len <= attackRange && defender.attackTimer <= 0) {
         defender.attackTimer = 1 / (defender.rate || 1);
-        const options = {
-          knockback: defender.knockback || 45,
-          bleedChance: defender.attackType === "melee" ? 0.04 : 0,
-          color: defender.attackType === "magic" ? "#7dd3ff" : "#f1b84b",
-        };
-        if (defender.attackType === "melee") {
-          startAttackFx(defender, target, defender.weaponId || "ironSword");
-          damageEnemy(target, allyDamage(defender) || 10, defender, options);
-          addParticles(target.x, target.y, "#f6f0db", 5, 80);
-        } else {
-          const speed = (defender.projectileSpeed || 420) * allyShotSpeedMultiplier();
-          const aim = aimPointForTarget(defender, target, speed, skillLevel("predictiveShot"));
-          const aimDx = aim.x - defender.x;
-          const aimDy = aim.y - defender.y;
-          const aimLen = Math.hypot(aimDx, aimDy) || 1;
-          state.projectiles.push({
-            x: defender.x + (aimDx / aimLen) * 18,
-            y: defender.y + (aimDy / aimLen) * 18,
-            vx: (aimDx / aimLen) * speed,
-            vy: (aimDy / aimLen) * speed,
-            life: attackRange / speed,
-            radius: defender.attackType === "magic" ? 8 : 5,
-            damage: allyDamage(defender) || 10,
-            color: defender.attackType === "magic" ? "#7dd3ff" : "#f1b84b",
-            splash: defender.splash || 0,
-            owner: defender,
-            options,
-          });
+        if (performDefenderAttack(defender, target, attackRange)) {
+          maybeDefenderCombo(defender, target, attackRange);
         }
       }
       continue;
@@ -5034,6 +5328,11 @@ function updateEnemies(dt) {
 }
 
 function updateEffects(dt) {
+  for (const bolt of state.lightningBolts) {
+    bolt.age += dt;
+  }
+  state.lightningBolts = state.lightningBolts.filter((bolt) => bolt.age < bolt.life);
+
   for (const particle of state.particles) {
     particle.age += dt;
     particle.x += particle.vx * dt;
@@ -5266,7 +5565,7 @@ function renderEquippedWeaponHud() {
   const weapon = equippedWeapon();
   ui.equippedWeaponIcon.src = `assets/sprites/icons/${weapon.id}.png`;
   ui.equippedWeaponName.textContent = weapon.name;
-  ui.equippedWeaponMeta.textContent = `${weapon.type} / 攻${weaponDamage(weapon)} 速${weaponRate(weapon).toFixed(1)} 射程${weaponRange(weapon)}`;
+  ui.equippedWeaponMeta.textContent = weaponSummaryText(weapon);
 }
 
 function renderStaticUi() {
@@ -5284,7 +5583,7 @@ function renderStaticUi() {
       <kbd>${displayIndex + 1}</kbd>
       <span>
         <strong>${weapon.name}</strong>
-        <small>${weapon.type} / 攻${weaponDamage(weapon)} 速${weaponRate(weapon).toFixed(1)} 射程${weaponRange(weapon)}</small>
+        <small>${weaponSummaryText(weapon)}</small>
       </span>
       <b>+${Object.values(weapon.enchants).reduce((a, b) => a + b, 0)}</b>
     `;
@@ -5410,6 +5709,7 @@ function updateUi() {
   ui.meatText.textContent = Math.floor(player.meat);
   if (ui.starstoneText) ui.starstoneText.textContent = Math.floor(player.starstone);
   renderEquippedWeaponHud();
+  renderActiveSkillSlots();
   updateRerollUi();
   if (ui.upgradeAxe) ui.upgradeAxe.textContent = `斧 LV${player.axeLevel} 強化`;
   if (ui.upgradePickaxe) ui.upgradePickaxe.textContent = `つるはし LV${player.pickaxeLevel} 強化`;
@@ -6309,6 +6609,18 @@ function drawDog(dog) {
 function drawProjectiles() {
   for (const projectile of state.projectiles) {
     const p = worldToScreen(projectile);
+    if (projectile.kind === "heal") {
+      ctx.fillStyle = projectile.color;
+      ctx.beginPath();
+      ctx.arc(p.x, p.y, projectile.radius, 0, TAU);
+      ctx.fill();
+      ctx.strokeStyle = "rgba(255, 255, 210, 0.72)";
+      ctx.lineWidth = 2;
+      ctx.beginPath();
+      ctx.arc(p.x, p.y, projectile.radius + 5 + Math.sin(state.time * 9) * 2, 0, TAU);
+      ctx.stroke();
+      continue;
+    }
     ctx.fillStyle = projectile.color;
     ctx.beginPath();
     ctx.arc(p.x, p.y, projectile.radius, 0, TAU);
@@ -6439,6 +6751,38 @@ function drawFlyingItems() {
 }
 
 function drawEffects() {
+  for (const bolt of state.lightningBolts) {
+    const alpha = 1 - bolt.age / bolt.life;
+    ctx.save();
+    ctx.globalAlpha = alpha;
+    ctx.lineCap = "round";
+    ctx.lineJoin = "round";
+    ctx.shadowColor = "rgba(246,211,95,0.78)";
+    ctx.shadowBlur = 14;
+    const screenPoints = bolt.points.map((point) => worldToScreen({
+      x: bolt.x + point.x,
+      y: bolt.y + point.y,
+    }));
+    ctx.strokeStyle = "#fff3a3";
+    ctx.lineWidth = 5;
+    ctx.beginPath();
+    screenPoints.forEach((point, index) => {
+      if (index === 0) ctx.moveTo(point.x, point.y);
+      else ctx.lineTo(point.x, point.y);
+    });
+    ctx.stroke();
+    ctx.shadowBlur = 0;
+    ctx.strokeStyle = "#7dd3ff";
+    ctx.lineWidth = 2;
+    ctx.stroke();
+    const end = screenPoints[screenPoints.length - 1];
+    ctx.beginPath();
+    ctx.arc(end.x, end.y, 22 + alpha * 12, 0, TAU);
+    ctx.strokeStyle = "rgba(246,211,95,0.72)";
+    ctx.stroke();
+    ctx.restore();
+  }
+
   for (const particle of state.particles) {
     const p = worldToScreen(particle);
     ctx.globalAlpha = 1 - particle.age / particle.life;
@@ -6639,6 +6983,15 @@ function handleKeydown(event) {
   if (state.menu.open) {
     event.preventDefault();
     return;
+  }
+  const activeSkillSlotIndex = ACTIVE_SKILL_SLOT_KEYS.indexOf(event.code);
+  if (activeSkillSlotIndex >= 0) {
+    const key = [...sanitizeActiveSkillHistory()].reverse()[activeSkillSlotIndex];
+    if (key) {
+      activateSkill(key);
+      event.preventDefault();
+      return;
+    }
   }
   if (/^[1-9]$/.test(event.key)) {
     const index = Number(event.key) - 1;
