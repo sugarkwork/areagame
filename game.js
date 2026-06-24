@@ -95,6 +95,12 @@ const RESOURCE_SPAWN_CAPS = {
 const RARE_MONSTER_TYPES = ["swampWisp", "lakeSprite"];
 const RARE_MONSTER_MAX_ACTIVE = 3;
 const RARE_MONSTER_SPAWN_INTERVAL = [18, 32];
+const FOREST_WOLF_PACK_SIZE = [3, 5];
+const FOREST_WOLF_MAX_ACTIVE = 12;
+const FOREST_WOLF_SPAWN_INTERVAL = [38, 62];
+const FOREST_WOLF_ISOLATION_RADIUS = 220;
+const FOREST_WOLF_HUNT_RADIUS = 2600;
+const FOREST_WOLF_STUN_DURATION = 2.35;
 
 function playerXpRequired(level) {
   const earlyLevel = clamp(level, 1, PLAYER_XP_EARLY_TARGET_LEVEL);
@@ -379,6 +385,14 @@ const bossSprites = {
       width: 58,
       height: 48,
     },
+    forestWolf: {
+      down: [box(0, 576, 96, 96), box(96, 576, 96, 96), box(192, 576, 96, 96)],
+      right: [box(0, 672, 96, 96), box(96, 672, 96, 96), box(192, 672, 96, 96)],
+      up: [box(0, 768, 96, 96), box(96, 768, 96, 96), box(192, 768, 96, 96)],
+      sideFaces: "right",
+      width: 58,
+      height: 48,
+    },
     wolfAlpha: {
       down: [box(0, 864, 96, 96), box(96, 864, 96, 96), box(192, 864, 96, 96)],
       right: [box(0, 960, 96, 96), box(96, 960, 96, 96), box(192, 960, 96, 96)],
@@ -541,6 +555,7 @@ const state = {
   floatText: [],
   resourceSpawnTimer: 0,
   rareSpawnTimer: rand(8, 16),
+  forestWolfTimer: rand(FOREST_WOLF_SPAWN_INTERVAL[0], FOREST_WOLF_SPAWN_INTERVAL[1]),
 };
 
 const player = {
@@ -598,6 +613,7 @@ const player = {
   skillCooldowns: {},
   activeSkillHistory: [],
   hiddenTime: 0,
+  stunned: 0,
   axeLevel: 1,
   pickaxeLevel: 1,
   attackTimer: 0,
@@ -1512,6 +1528,24 @@ const enemyDefs = {
     weight: 4,
     behavior: "melee",
   },
+  forestWolf: {
+    id: "forestWolf",
+    label: "フォレストウルフ",
+    color: "#4d7654",
+    accent: "#9ed075",
+    radius: 17,
+    hp: 58,
+    speed: [292, 340],
+    damage: 8,
+    attackCooldown: 0.72,
+    xp: 34,
+    meatChance: 0.72,
+    meatAmount: [1, 2],
+    weight: 0,
+    behavior: "forestWolf",
+    rare: true,
+    knockbackResist: 0.82,
+  },
   ogreBoss: {
     id: "ogreBoss",
     label: "巨大オーガ",
@@ -2210,6 +2244,7 @@ function markAllyFallen(ally) {
   clearAllyWorkTargets(ally);
   ally.hp = 0;
   ally.fallen = true;
+  ally.stunned = 0;
   ally.moving = false;
   ally.harvesting = false;
   ally.attackFx = null;
@@ -2758,6 +2793,34 @@ function playerTerrainSpeedAt(x, y) {
 
 function dropMagnetRange() {
   return 46 + skillLevel("magnet") * 22;
+}
+
+function isStunned(entity) {
+  return (entity?.stunned || 0) > 0;
+}
+
+function tickStun(entity, dt) {
+  entity.stunned = Math.max(0, (entity.stunned || 0) - dt);
+  if (!isStunned(entity)) return false;
+  entity.moving = false;
+  entity.harvesting = false;
+  if (entity.attackFx) entity.attackFx = null;
+  return true;
+}
+
+function stunEntity(entity, duration, source = null) {
+  if (!entity || entity.hp <= 0) return false;
+  const previous = entity.stunned || 0;
+  entity.stunned = Math.max(previous, duration);
+  entity.moving = false;
+  entity.harvesting = false;
+  addFloatText("スタン", entity.x, entity.y - 52, "#f1b84b");
+  addParticles(entity.x, entity.y, "#f1b84b", 12, 100);
+  if (source && previous <= 0) {
+    const label = entity === player ? "プレイヤー" : entity.label || allyTypeLabel(entity);
+    showToast(`${label}がフォレストウルフにスタンされました`);
+  }
+  return true;
 }
 
 function isAlly(entity) {
@@ -3475,6 +3538,7 @@ function restorePlayer(savedPlayer = {}) {
     player[key] = Math.max(0, cleanInt(saved.resources?.[key], player[key] || 0));
   }
   player.hiddenTime = 0;
+  player.stunned = 0;
   player.attackTimer = 0;
   player.attackFx = null;
   player.activeSkillHistory = sanitizeActiveSkillHistory(saved.activeSkillHistory);
@@ -3574,6 +3638,7 @@ function restoreDefender(saved, index) {
     xpNext: Math.max(1, cleanInt(saved.xpNext, 54)),
     moveDir: "down",
     moving: false,
+    stunned: 0,
     homeOffset,
     attackType,
     baseDamage: cleanNumber(saved.baseDamage, def.damage || saved.damage || 8),
@@ -3621,6 +3686,7 @@ function restoreWorker(saved, index) {
     xpNext: Math.max(1, cleanInt(saved.xpNext, 54)),
     moveDir: "down",
     moving: false,
+    stunned: 0,
     homeOffset,
     targets: Array.isArray(saved.targets) && saved.targets.length > 0 ? [...saved.targets] : [...(def.targets || [])],
     searchRadius: cleanNumber(saved.searchRadius, def.searchRadius || 420),
@@ -3681,6 +3747,7 @@ function clearRuntimeWorldState() {
   state.fallenAllies = [];
   state.resourceSpawnTimer = 0;
   resetRareSpawnTimer();
+  resetForestWolfTimer();
   state.spawnTimer = 0;
   state.nextBuildingUid = 1;
 }
@@ -4147,11 +4214,97 @@ function activeWaveEnemyCount() {
 }
 
 function activeRareEnemyCount(type = null) {
-  return state.enemies.filter((enemy) => enemy.hp > 0 && enemy.rare && (!type || enemy.type === type)).length;
+  return state.enemies.filter((enemy) => (
+    enemy.hp > 0
+    && enemy.rare
+    && enemy.terrainKind
+    && (!type || enemy.type === type)
+  )).length;
 }
 
 function resetRareSpawnTimer() {
   state.rareSpawnTimer = rand(RARE_MONSTER_SPAWN_INTERVAL[0], RARE_MONSTER_SPAWN_INTERVAL[1]);
+}
+
+function resetForestWolfTimer() {
+  state.forestWolfTimer = rand(FOREST_WOLF_SPAWN_INTERVAL[0], FOREST_WOLF_SPAWN_INTERVAL[1]);
+}
+
+function friendlyUnitsForWolves() {
+  return [
+    ...(player.hiddenTime > 0 ? [] : [player]),
+    ...state.defenders,
+    ...state.workers,
+  ].filter((unit) => unit.hp > 0 && !unit.fallen);
+}
+
+function isForestWolfIsolatedTarget(unit) {
+  const units = friendlyUnitsForWolves();
+  if (!units.includes(unit)) return false;
+  return units.every((other) => (
+    other === unit
+    || Math.hypot(other.x - unit.x, other.y - unit.y) > FOREST_WOLF_ISOLATION_RADIUS
+  ));
+}
+
+function findForestWolfTarget(origin = player) {
+  let best = null;
+  let bestScore = FOREST_WOLF_HUNT_RADIUS;
+  for (const unit of friendlyUnitsForWolves()) {
+    if (!isForestWolfIsolatedTarget(unit)) continue;
+    const d = Math.hypot(unit.x - origin.x, unit.y - origin.y);
+    const hpRatio = unit.maxHp ? unit.hp / unit.maxHp : 1;
+    const score = d + hpRatio * 80;
+    if (score < bestScore) {
+      best = unit;
+      bestScore = score;
+    }
+  }
+  return best;
+}
+
+function activeForestWolfCount() {
+  return state.enemies.filter((enemy) => enemy.hp > 0 && enemy.type === "forestWolf").length;
+}
+
+function spawnForestWolfPack() {
+  if (activeForestWolfCount() >= FOREST_WOLF_MAX_ACTIVE) return false;
+  const target = findForestWolfTarget(player);
+  if (!target) return false;
+  const count = Math.min(
+    FOREST_WOLF_MAX_ACTIVE - activeForestWolfCount(),
+    Math.floor(rand(FOREST_WOLF_PACK_SIZE[0], FOREST_WOLF_PACK_SIZE[1] + 1)),
+  );
+  const packId = `forest-${Math.floor(state.time * 1000)}-${Math.floor(rand(0, 9999))}`;
+  const waveScale = 1 + Math.min(1.2, Math.max(0, state.wave.index - 1) * 0.018);
+  const baseAngle = rand(0, TAU);
+  for (let i = 0; i < count; i += 1) {
+    const angle = baseAngle + (i / count) * TAU + rand(-0.34, 0.34);
+    const distance = rand(500, 760);
+    const enemy = spawnEnemy("forestWolf", {
+      point: {
+        x: target.x + Math.cos(angle) * distance,
+        y: target.y + Math.sin(angle) * distance,
+      },
+      rare: true,
+      scale: waveScale,
+      hpScale: waveScale,
+    });
+    enemy.packId = packId;
+    enemy.noTargetTimer = 0;
+    enemy.huntTarget = target;
+  }
+  showToast(`フォレストウルフの群れが${target === player ? "プレイヤー" : target.label}を狙っています`);
+  return true;
+}
+
+function updateForestWolfSpawns(dt) {
+  state.forestWolfTimer -= dt;
+  if (state.forestWolfTimer > 0) return;
+  resetForestWolfTimer();
+  if (activeForestWolfCount() >= FOREST_WOLF_MAX_ACTIVE) return;
+  if (Math.random() > 0.55) return;
+  spawnForestWolfPack();
 }
 
 function findRareTerrainSpawnPoint(terrainKind) {
@@ -4540,6 +4693,7 @@ function applyProjectileHoming(projectile, dt) {
 }
 
 function playerAttack(dt) {
+  if (isStunned(player)) return;
   const weapon = equippedWeapon();
   player.attackTimer -= dt;
   const range = weaponRange(weapon);
@@ -4695,6 +4849,11 @@ function getMoveVector() {
 }
 
 function updatePlayer(dt) {
+  if (tickStun(player, dt)) {
+    state.camera.x += (player.x - state.camera.x) * clamp(dt * 8, 0, 1);
+    state.camera.y += (player.y - state.camera.y) * clamp(dt * 8, 0, 1);
+    return;
+  }
   const move = getMoveVector();
   if (Math.hypot(move.x, move.y) > 0.05) {
     const terrainSpeed = playerTerrainSpeedAt(player.x, player.y);
@@ -4712,6 +4871,12 @@ function updatePlayer(dt) {
 }
 
 function updateHarvest(dt) {
+  if (isStunned(player)) {
+    player.harvestTarget = null;
+    player.harvestPulse = 0;
+    player.harvesting = false;
+    return;
+  }
   let target = null;
   let best = 78;
   for (const resource of state.resources) {
@@ -4936,6 +5101,7 @@ function updateDefenders(dt) {
   for (const defender of state.defenders) {
     syncAllyStats(defender);
     defender.attackTimer -= dt;
+    if (tickStun(defender, dt)) continue;
     const home = allyHomePosition(defender);
     const homeX = home.x;
     const homeY = home.y;
@@ -5292,6 +5458,10 @@ function findDropForDog(dog) {
 }
 
 function moveAllyToward(ally, x, y, dt, arriveDistance = 10) {
+  if (isStunned(ally)) {
+    ally.moving = false;
+    return false;
+  }
   const dx = x - ally.x;
   const dy = y - ally.y;
   const len = Math.hypot(dx, dy);
@@ -5366,6 +5536,13 @@ function finishWorkerHarvest(worker, resource) {
 function updateWorkers(dt) {
   assignDogDropTargets();
   for (const worker of state.workers) {
+    syncAllyStats(worker);
+    if (tickStun(worker, dt)) {
+      worker.harvesting = false;
+      worker.repairPulse = 0;
+      worker.healPulse = 0;
+      continue;
+    }
     if (worker.kind === "dog") {
       updateDog(worker, dt);
       continue;
@@ -5378,7 +5555,6 @@ function updateWorkers(dt) {
       updateHealer(worker, dt);
       continue;
     }
-    syncAllyStats(worker);
     if (retreatAssignedWorkerIfThreatened(worker, dt)) {
       worker.harvesting = false;
       continue;
@@ -5718,6 +5894,67 @@ function updateTerrainRareEnemy(enemy, dt) {
     enemy.roamTarget = rareRoamTarget(enemy);
   }
   moveRareEnemyToward(enemy, enemy.roamTarget, dt, 0.55);
+}
+
+function nearestFriendlyUnit(origin) {
+  return nearestTargetByDistance(origin, friendlyUnitsForWolves()).target;
+}
+
+function findStunnedForestWolfVictim(enemy) {
+  let best = null;
+  let bestDistance = 520;
+  for (const unit of friendlyUnitsForWolves()) {
+    if (!isStunned(unit)) continue;
+    const d = Math.hypot(unit.x - enemy.x, unit.y - enemy.y);
+    if (d < bestDistance) {
+      best = unit;
+      bestDistance = d;
+    }
+  }
+  return best;
+}
+
+function forestWolfAttack(enemy, target, targetDistance) {
+  if (targetDistance >= enemy.radius + (target.radius || player.radius) + 10) return false;
+  enemy.moving = false;
+  enemy.moveDir = directionFromVector(target.x - enemy.x, target.y - enemy.y, enemy.moveDir);
+  if (enemy.attackTimer > 0) return true;
+  enemy.attackTimer = enemy.attackCooldown || 0.72;
+  const alreadyStunned = isStunned(target);
+  applyDamage(target, enemy.damage * (alreadyStunned ? 1.35 : 0.82), enemy, "#9ed075");
+  if (!alreadyStunned) {
+    stunEntity(target, FOREST_WOLF_STUN_DURATION, enemy);
+    enemy.attackTimer += 0.25;
+  }
+  return true;
+}
+
+function retreatForestWolf(enemy, dt) {
+  const nearest = nearestFriendlyUnit(enemy) || player;
+  enemy.noTargetTimer = (enemy.noTargetTimer || 0) + dt;
+  moveEnemyAwayFrom(enemy, nearest, dt, 0.86);
+  const playerDistance = Math.hypot(enemy.x - player.x, enemy.y - player.y);
+  if (enemy.noTargetTimer > 7.5 && playerDistance > 1050) {
+    enemy.despawn = true;
+    enemy.hp = 0;
+    addParticles(enemy.x, enemy.y, enemy.accent || "#9ed075", 8, 80);
+  }
+}
+
+function updateForestWolfEnemy(enemy, dt) {
+  const stunnedVictim = findStunnedForestWolfVictim(enemy);
+  const isolatedTarget = stunnedVictim || findForestWolfTarget(enemy);
+  if (!isolatedTarget) {
+    enemy.huntTarget = null;
+    retreatForestWolf(enemy, dt);
+    return;
+  }
+
+  enemy.noTargetTimer = 0;
+  enemy.huntTarget = isolatedTarget;
+  const targetDistance = enemyTargetDistance(enemy, isolatedTarget);
+  if (forestWolfAttack(enemy, isolatedTarget, targetDistance)) return;
+  moveEnemyToward(enemy, isolatedTarget, dt, stunnedVictim ? 1.08 : 1.18);
 }
 
 function updateBoarEnemy(enemy, target, dt) {
@@ -6098,6 +6335,7 @@ function updateTreantEnemy(enemy, dt) {
 
 function updateEnemies(dt) {
   updateRareMonsterSpawns(dt);
+  updateForestWolfSpawns(dt);
   updateWave(dt);
 
   for (const enemy of state.enemies) {
@@ -6133,6 +6371,11 @@ function updateEnemies(dt) {
 
     if (enemy.behavior === "terrainRare") {
       updateTerrainRareEnemy(enemy, dt);
+      continue;
+    }
+
+    if (enemy.behavior === "forestWolf") {
+      updateForestWolfEnemy(enemy, dt);
       continue;
     }
 
@@ -6192,7 +6435,7 @@ function updateEnemies(dt) {
     moveEnemyToward(enemy, target, dt);
   }
 
-  const defeated = state.enemies.filter((enemy) => enemy.hp <= 0);
+  const defeated = state.enemies.filter((enemy) => enemy.hp <= 0 && !enemy.despawn);
   defeated.forEach(awardEnemyDefeat);
   state.enemies = state.enemies.filter((enemy) => enemy.hp > 0);
   if (defeated.length > 0) {
@@ -6370,6 +6613,7 @@ function hirePerson(def) {
     xpNext: 54,
     moveDir: "down",
     moving: false,
+    stunned: 0,
     homeOffset,
     hireCost: clonePlain(def.cost || {}),
   };
@@ -6847,6 +7091,28 @@ function drawResource(resource) {
   ctx.restore();
 }
 
+function drawStunIndicator(x, y, radius = 16) {
+  ctx.save();
+  ctx.strokeStyle = "rgba(241,184,75,0.82)";
+  ctx.fillStyle = "rgba(241,184,75,0.18)";
+  ctx.lineWidth = 2;
+  ctx.setLineDash([4, 5]);
+  ctx.beginPath();
+  ctx.ellipse(x, y + Math.sin(state.time * 8) * 2, radius, radius * 0.38, 0, 0, TAU);
+  ctx.fill();
+  ctx.stroke();
+  ctx.setLineDash([]);
+  ctx.font = "800 10px 'Segoe UI', sans-serif";
+  ctx.textAlign = "center";
+  ctx.textBaseline = "middle";
+  ctx.lineWidth = 3;
+  ctx.strokeStyle = "rgba(23,20,20,0.72)";
+  ctx.strokeText("STUN", x, y - 9);
+  ctx.fillStyle = "#f1b84b";
+  ctx.fillText("STUN", x, y - 9);
+  ctx.restore();
+}
+
 function drawPlayer() {
   const p = worldToScreen(player);
   const frame = spriteFrame(sprites.player, player.moveDir, player.moving);
@@ -6899,6 +7165,7 @@ function drawPlayer() {
     ctx.stroke();
     ctx.setLineDash([]);
   }
+  if (isStunned(player)) drawStunIndicator(p.x, p.y - 50, 19);
 }
 
 function drawEnemy(enemy) {
@@ -7370,6 +7637,7 @@ function drawAllyStatus(ally, x, y, width = 40) {
     ctx.fillRect(x + width / 2 + 6, barY + 1, 3, 5);
   }
   ctx.restore();
+  if (isStunned(ally)) drawStunIndicator(x, y - 43, 15);
 }
 
 const allyRoleVisuals = {
