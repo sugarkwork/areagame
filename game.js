@@ -101,6 +101,7 @@ const FOREST_WOLF_SPAWN_INTERVAL = [38, 62];
 const FOREST_WOLF_ISOLATION_RADIUS = 220;
 const FOREST_WOLF_HUNT_RADIUS = 2600;
 const FOREST_WOLF_STUN_DURATION = 2.35;
+const PORTRAIT_CACHE_VERSION = "20260625-0155";
 
 function playerXpRequired(level) {
   const earlyLevel = clamp(level, 1, PLAYER_XP_EARLY_TARGET_LEVEL);
@@ -6717,8 +6718,13 @@ function allyRoleIconSrc(ally) {
   return def?.icon || "assets/icons/hire-guard.png";
 }
 
+function portraitAssetSrc(src) {
+  if (!src || !src.startsWith("assets/portraits/") || src.includes("?")) return src;
+  return `${src}?v=${PORTRAIT_CACHE_VERSION}`;
+}
+
 function allyPortraitSrc(ally) {
-  return ally.portrait || allyRoleIconSrc(ally);
+  return portraitAssetSrc(ally.portrait) || allyRoleIconSrc(ally);
 }
 
 function baseNameForUid(uid) {
