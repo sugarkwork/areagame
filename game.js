@@ -64,7 +64,7 @@ const SAVE_VERSION = 1;
 const ENEMY_HP_MULTIPLIER = 1.5;
 const RESOURCE_HP_MULTIPLIER = 1.5;
 const BASE_DUTY_EXTRA_RADIUS = 0.3;
-const BASE_DOG_DUTY_EXTRA_RADIUS = 0.9;
+const BASE_DOG_DUTY_EXTRA_RADIUS = 1.0;
 const BASE_WORKER_THREAT_RADIUS = 145;
 const BASE_DOG_THREAT_RADIUS = 95;
 const BASE_REPAIRER_THREAT_RADIUS = 58;
@@ -5009,22 +5009,56 @@ function updateHealer(healer, dt) {
   }
 }
 
-function findNearestDropForDog(dog) {
-  let best = null;
-  const home = allyHomePosition(dog);
-  const center = home.base || dog;
-  const allowedRadius = home.base ? baseDutyRadiusFor(dog, home.base) : dog.searchRadius || 620;
-  let bestDistance = home.base ? allowedRadius : dog.searchRadius || 620;
-  for (const drop of state.drops) {
-    if (drop.collected || drop.pickupDelay > 0) continue;
-    if (Math.hypot(drop.x - center.x, drop.y - center.y) > allowedRadius) continue;
-    const d = Math.hypot(drop.x - dog.x, drop.y - dog.y);
-    if (d < bestDistance) {
-      best = drop;
-      bestDistance = d;
+function dogActivityBase(dog) {
+  return assignedBase(dog);
+}
+
+function dogDropAllowed(dog, drop) {
+  if (!drop || drop.collected || drop.pickupDelay > 0) return false;
+  const base = dogActivityBase(dog);
+  if (!base) return true;
+  return Math.hypot(drop.x - base.x, drop.y - base.y) <= baseRadius(base) * 2;
+}
+
+function activeCollectorDogs() {
+  return state.workers.filter((worker) => (
+    worker.kind === "dog"
+    && worker.hp > 0
+    && !worker.carryDrop
+  ));
+}
+
+function assignDogDropTargets() {
+  const dogs = activeCollectorDogs();
+  for (const dog of dogs) dog.fetchPlan = null;
+  const drops = state.drops.filter((drop) => !drop.collected && drop.pickupDelay <= 0);
+  if (dogs.length === 0 || drops.length === 0) return;
+
+  const pairs = [];
+  for (const dog of dogs) {
+    for (const drop of drops) {
+      if (!dogDropAllowed(dog, drop)) continue;
+      let distance = Math.hypot(drop.x - dog.x, drop.y - dog.y);
+      if (dog.fetchTarget === drop) distance *= 0.82;
+      pairs.push({ dog, drop, distance });
     }
   }
-  return best;
+  pairs.sort((a, b) => a.distance - b.distance);
+
+  const assignedDogs = new Set();
+  const assignedDrops = new Set();
+  for (const pair of pairs) {
+    if (assignedDogs.has(pair.dog) || assignedDrops.has(pair.drop)) continue;
+    pair.dog.fetchPlan = pair.drop;
+    assignedDogs.add(pair.dog);
+    assignedDrops.add(pair.drop);
+  }
+}
+
+function findDropForDog(dog) {
+  if (dog.fetchPlan && dogDropAllowed(dog, dog.fetchPlan)) return dog.fetchPlan;
+  dog.fetchPlan = null;
+  return null;
 }
 
 function moveAllyToward(ally, x, y, dt, arriveDistance = 10) {
@@ -5061,13 +5095,14 @@ function updateDog(dog, dt) {
       });
       addFloatText("お届け", dog.x, dog.y - 34, "#f1b84b");
       dog.carryDrop = null;
+      dog.fetchPlan = null;
     }
     return;
   }
 
   if (retreatAssignedWorkerIfThreatened(dog, dt)) return;
 
-  const drop = findNearestDropForDog(dog);
+  const drop = findDropForDog(dog);
   if (drop) {
     dog.fetchTarget = drop;
     const arrived = moveAllyToward(dog, drop.x, drop.y, dt, dog.radius + drop.radius + 8);
@@ -5077,12 +5112,14 @@ function updateDog(dog, dt) {
         amount: drop.amount,
       };
       drop.collected = true;
+      dog.fetchPlan = null;
       addFloatText("ワンコ回収", dog.x, dog.y - 32, "#f1b84b");
     }
     return;
   }
 
   dog.fetchTarget = null;
+  dog.fetchPlan = null;
   const home = allyHomePosition(dog);
   moveAllyToward(dog, home.x, home.y, dt, 12);
 }
@@ -5097,6 +5134,7 @@ function finishWorkerHarvest(worker, resource) {
 }
 
 function updateWorkers(dt) {
+  assignDogDropTargets();
   for (const worker of state.workers) {
     if (worker.kind === "dog") {
       updateDog(worker, dt);
