@@ -74,6 +74,21 @@ const PLAYER_XP_EARLY_TARGET = 150;
 const PLAYER_XP_EARLY_TARGET_LEVEL = 20;
 const ACTIVE_SKILL_SLOT_KEYS = ["KeyQ", "KeyR", "KeyF"];
 const ACTIVE_SKILL_SLOT_LABELS = ["Q", "R", "F"];
+const RESOURCE_NEARBY_RADIUS = 1700;
+const RESOURCE_OVERFLOW_RADIUS = 2200;
+const RESOURCE_SPAWN_TARGETS = {
+  wood: 22,
+  stone: 16,
+  gold: 8,
+  iron: 10,
+};
+const RESOURCE_SPAWN_CAPS = {
+  wood: 28,
+  stone: 20,
+  gold: 11,
+  iron: 13,
+  starstone: 1,
+};
 
 function playerXpRequired(level) {
   const earlyLevel = clamp(level, 1, PLAYER_XP_EARLY_TARGET_LEVEL);
@@ -3053,6 +3068,16 @@ function canSpawnResourceAt(type, x, y) {
   }
   if (terrain.kind === "pond" || terrain.kind === "swamp") return false;
   if (state.resources.some((resource) => Math.hypot(resource.x - x, resource.y - y) < resource.radius + 52)) return false;
+  const sameTypeNearby = state.resources.filter((resource) => (
+    resource.type === type
+    && Math.hypot(resource.x - x, resource.y - y) < (type === "wood" ? 620 : 540)
+  )).length;
+  if (sameTypeNearby >= (type === "wood" ? 3 : 2)) return false;
+  const crowdedNearby = state.resources.filter((resource) => (
+    resource.type !== "starstone"
+    && Math.hypot(resource.x - x, resource.y - y) < 420
+  )).length;
+  if (crowdedNearby >= 4) return false;
   if (type === "wood") {
     if (!terrain.allowsTrees || terrain.kind === "path") return false;
     return Math.random() < (terrain.treeDensity || 0.35);
@@ -3071,7 +3096,18 @@ function resourceSpawnPoint(type, nearPlayer) {
   };
 }
 
-function spawnResource(type, nearPlayer = false) {
+function nearbyResourceCount(type, radius = RESOURCE_NEARBY_RADIUS) {
+  return state.resources.filter((resource) => resource.type === type && Math.hypot(resource.x - player.x, resource.y - player.y) < radius).length;
+}
+
+function resourceAtCapacity(type, radius = RESOURCE_NEARBY_RADIUS) {
+  const cap = RESOURCE_SPAWN_CAPS[type];
+  if (!cap) return false;
+  return nearbyResourceCount(type, type === "starstone" ? 2600 : radius) >= cap;
+}
+
+function spawnResource(type, nearPlayer = false, options = {}) {
+  if (!options.ignoreCapacity && resourceAtCapacity(type)) return false;
   const def = resourceDefs[type];
   let point = null;
   for (let i = 0; i < (type === "starstone" ? 240 : 120); i += 1) {
@@ -3096,31 +3132,35 @@ function spawnResource(type, nearPlayer = false) {
   return true;
 }
 
-function nearbyResourceCount(type, radius = 1500) {
-  return state.resources.filter((resource) => resource.type === type && Math.hypot(resource.x - player.x, resource.y - player.y) < radius).length;
-}
-
 function pruneDistantResources() {
   state.resources = state.resources.filter((resource) => {
-    const keepRadius = resource.type === "starstone" ? 5600 : 4300;
+    const keepRadius = resource.type === "starstone" ? 5600 : 3300;
     return Math.hypot(resource.x - player.x, resource.y - player.y) < keepRadius;
   });
+}
+
+function pruneNearbyResourceOverflow() {
+  for (const [type, cap] of Object.entries(RESOURCE_SPAWN_CAPS)) {
+    if (type === "starstone") continue;
+    const nearby = state.resources
+      .filter((resource) => resource.type === type && Math.hypot(resource.x - player.x, resource.y - player.y) < RESOURCE_OVERFLOW_RADIUS)
+      .sort((a, b) => Math.hypot(b.x - player.x, b.y - player.y) - Math.hypot(a.x - player.x, a.y - player.y));
+    const excess = nearby.length - cap;
+    if (excess <= 0) continue;
+    const removeSet = new Set(nearby.slice(0, excess));
+    state.resources = state.resources.filter((resource) => !removeSet.has(resource));
+  }
 }
 
 function maintainAmbientResources(dt) {
   state.resourceSpawnTimer -= dt;
   if (state.resourceSpawnTimer > 0) return;
-  state.resourceSpawnTimer = 0.9;
+  state.resourceSpawnTimer = 1.8;
   pruneDistantResources();
-  const targets = {
-    wood: 32,
-    stone: 22,
-    gold: 12,
-    iron: 14,
-  };
-  for (const [type, count] of Object.entries(targets)) {
+  pruneNearbyResourceOverflow();
+  for (const [type, count] of Object.entries(RESOURCE_SPAWN_TARGETS)) {
     const shortage = count - nearbyResourceCount(type);
-    for (let i = 0; i < Math.min(4, shortage); i += 1) {
+    for (let i = 0; i < Math.min(2, shortage); i += 1) {
       spawnResource(type, false);
     }
   }
@@ -3130,10 +3170,10 @@ function maintainAmbientResources(dt) {
 }
 
 function seedAmbientResourcesAroundPlayer() {
-  for (let i = 0; i < 34; i += 1) spawnResource("wood", true);
-  for (let i = 0; i < 25; i += 1) spawnResource("stone", true);
-  for (let i = 0; i < 16; i += 1) spawnResource("gold", true);
-  for (let i = 0; i < 18; i += 1) spawnResource("iron", true);
+  for (let i = 0; i < 24; i += 1) spawnResource("wood", true);
+  for (let i = 0; i < 18; i += 1) spawnResource("stone", true);
+  for (let i = 0; i < 9; i += 1) spawnResource("gold", true);
+  for (let i = 0; i < 11; i += 1) spawnResource("iron", true);
   spawnResource("starstone", false);
 }
 
