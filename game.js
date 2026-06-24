@@ -27,6 +27,7 @@ const ui = {
   buildButtons: document.querySelector("#buildButtons"),
   hireButtons: document.querySelector("#hireButtons"),
   skillButtons: document.querySelector("#skillButtons"),
+  baseReviveButtons: document.querySelector("#baseReviveButtons"),
   levelUpBackdrop: document.querySelector("#levelUpBackdrop"),
   levelUpPanel: document.querySelector("#levelUpPanel"),
   skillChoiceButtons: document.querySelector("#skillChoiceButtons"),
@@ -39,6 +40,7 @@ const ui = {
   buildPanel: document.querySelector("#buildPanel"),
   hirePanel: document.querySelector("#hirePanel"),
   skillPanel: document.querySelector("#skillPanel"),
+  basePanel: document.querySelector("#basePanel"),
   menuBackdrop: document.querySelector("#menuBackdrop"),
   radialMenu: document.querySelector("#radialMenu"),
   radialWeapons: document.querySelector('[data-menu="weapons"]'),
@@ -428,6 +430,7 @@ const state = {
     submenu: null,
     x: 0,
     y: 0,
+    baseUid: null,
   },
   skillChoice: {
     open: false,
@@ -457,6 +460,7 @@ const state = {
   nextBuildingUid: 1,
   defenders: [],
   workers: [],
+  fallenAllies: [],
   drops: [],
   flyItems: [],
   particles: [],
@@ -505,6 +509,7 @@ const player = {
     predictiveShot: 0,
     combo: 0,
     lightningBolt: 0,
+    allyRevive: 0,
   },
   unlocks: {
     weapons: { knife: true },
@@ -585,6 +590,24 @@ const itemVisuals = {
   meat: { label: "肉", color: "#d96464", particle: "#ffbea6", dark: "#4b2224" },
   starstone: { label: "星雫石", color: "#cfa7ff", particle: "#efe0ff", dark: "#5d4a85" },
 };
+
+const allyNamePool = [
+  "エイミー", "レベッカ", "コーネリアス", "セシリア", "アルベルト", "ベアトリス", "ロザリア", "フィリップ", "オリヴィア", "ジュリアン",
+  "クラリス", "エドガー", "マチルダ", "ヴィクター", "イザベラ", "ライオネル", "エレナ", "セドリック", "ミリアム", "ルーカス",
+  "アンジェラ", "ダリウス", "ノエル", "フローラ", "ガブリエル", "シルヴィア", "レオン", "テレサ", "ヘレナ", "バーナード",
+  "アリシア", "カミーユ", "マルセル", "リディア", "グレゴリー", "ソフィア", "ナタリア", "オスカー", "ヴィオラ", "フェリクス",
+  "メリッサ", "ランドルフ", "エステル", "ユリア", "マクシム", "クレア", "ローレンス", "エルザ", "パトリック", "モニカ",
+  "ジゼル", "エリオット", "カサンドラ", "ヒューゴ", "アデル", "セリーヌ", "ジェラルド", "マリベル", "トリスタン", "ルシア",
+  "バジル", "エヴァン", "ミランダ", "ローザ", "コンラッド", "イレーネ", "アルフォンス", "ディアナ", "ミカエル", "レティシア",
+  "ブリジット", "エドワード", "カトリーヌ", "サミュエル", "ロレッタ", "エルマー", "ヴァネッサ", "レイモンド", "マーガレット", "アーロン",
+  "セレナ", "ジョナサン", "アンナ", "ヘンリエッタ", "ダニエル", "プリシラ", "フレデリック", "エミリア", "ジョセフ", "クラウディア",
+  "ロベルト", "マリアン", "アーサー", "フランシスカ", "ジェレミー", "クリスティーナ", "ニコラス", "ヴェロニカ", "セルジュ", "オフィーリア",
+];
+
+const dogNamePool = [
+  "ポチ", "コロ", "ルーク", "ビスケット", "モカ", "チャイ", "ラッキー", "こむぎ", "ソラ", "マロン",
+  "ベル", "ノア", "テオ", "ロッキー", "ミルク", "クッキー", "ハチ", "ラテ", "ブラン", "シロップ",
+];
 
 const MAX_SKILL_LEVEL = 10;
 const skillDefs = [
@@ -736,6 +759,17 @@ const skillDefs = [
     rarity: "uncommon",
     weight: 7,
     summary: (level) => `味方の最大HPと攻撃力 +${level * 7}%`,
+  },
+  {
+    key: "allyRevive",
+    name: "味方復活",
+    type: "passive",
+    icon: "assets/icons/skill-ally-revive.png",
+    rarity: "rare",
+    weight: 4,
+    maxLevel: 1,
+    requiresBase: true,
+    summary: () => "拠点メニューから力尽きた味方を蘇生できるようになります",
   },
   {
     key: "combo",
@@ -1104,6 +1138,35 @@ const hireDefs = [
     leash: 520,
   },
 ];
+
+function hireDefById(id) {
+  return hireDefs.find((def) => def.id === id);
+}
+
+function usedCompanionNames() {
+  return new Set([
+    ...state.defenders,
+    ...state.workers,
+    ...state.fallenAllies,
+  ].map((ally) => ally.name || ally.label).filter(Boolean));
+}
+
+function randomCompanionName(def) {
+  const pool = def.kind === "dog" ? dogNamePool : allyNamePool;
+  const used = usedCompanionNames();
+  const available = pool.filter((name) => !used.has(name));
+  const source = available.length > 0 ? available : pool;
+  return source[Math.floor(Math.random() * source.length)];
+}
+
+function allyTypeLabel(ally) {
+  return ally.unitLabel || hireDefById(ally.id)?.label || ally.role || "味方";
+}
+
+function allyDisplayName(ally) {
+  const type = allyTypeLabel(ally);
+  return ally.label && ally.label !== type ? `${ally.label}（${type}）` : type;
+}
 
 const enemyDefs = {
   redSlime: {
@@ -1561,6 +1624,7 @@ function hideMenuPanels() {
   ui.buildPanel.hidden = true;
   ui.hirePanel.hidden = true;
   ui.skillPanel.hidden = true;
+  ui.basePanel.hidden = true;
 }
 
 function clearPointerControl() {
@@ -1614,6 +1678,7 @@ function openWorldMenu(x, y) {
   const point = clampMenuAnchor(x, y);
   state.menu.open = true;
   state.menu.submenu = null;
+  state.menu.baseUid = null;
   state.menu.x = point.x;
   state.menu.y = point.y;
   ui.menuBackdrop.hidden = false;
@@ -1630,6 +1695,7 @@ function openWorldMenuAtPlayer() {
 function closeWorldMenu() {
   state.menu.open = false;
   state.menu.submenu = null;
+  state.menu.baseUid = null;
   ui.menuBackdrop.hidden = true;
   ui.radialMenu.hidden = true;
   hideMenuPanels();
@@ -1723,6 +1789,20 @@ function formationOffset(index) {
 
 function skillLevel(key) {
   return player.skills[key] || 0;
+}
+
+function skillDefByKey(key) {
+  return skillDefs.find((def) => def.key === key);
+}
+
+function skillMaxLevel(defOrKey) {
+  const def = typeof defOrKey === "string" ? skillDefByKey(defOrKey) : defOrKey;
+  return def?.maxLevel || MAX_SKILL_LEVEL;
+}
+
+function canOfferSkillReward(def) {
+  if (def.requiresBase && baseBuildings().length === 0) return false;
+  return skillLevel(def.key) < skillMaxLevel(def);
 }
 
 function enchantLevel(weapon, key) {
@@ -1872,6 +1952,32 @@ function clearAllyWorkTargets(ally) {
   if (ally.repairJob) cancelRepairJob(ally);
 }
 
+function markAllyFallen(ally) {
+  if (!ally || ally.fallen) return;
+  clearAllyWorkTargets(ally);
+  ally.hp = 0;
+  ally.fallen = true;
+  ally.moving = false;
+  ally.harvesting = false;
+  ally.attackFx = null;
+  const base = nearestBaseTo(ally) || baseBuildings()[0] || null;
+  ally.fallenBaseUid = base?.uid || null;
+  const message = base
+    ? `${ally.label}は力尽きて拠点に運ばれた`
+    : `${ally.label}は力尽きた`;
+  showToast(message);
+  addFloatText("力尽きた", ally.x, ally.y - 48, "#d96464");
+  addParticles(ally.x, ally.y, "#d96464", 16, 120);
+  state.fallenAllies.push(ally);
+}
+
+function moveFallenAlliesToBase(allies) {
+  for (const ally of allies) {
+    if (ally.hp <= 0) markAllyFallen(ally);
+  }
+  return allies.filter((ally) => ally.hp > 0);
+}
+
 function isCombatAlly(ally) {
   return ally.attackType === "melee" || ally.attackType === "ranged" || ally.attackType === "magic";
 }
@@ -2013,7 +2119,7 @@ function shuffleList(items) {
 }
 
 function availableSkillDefs() {
-  return skillDefs.filter((def) => skillLevel(def.key) < MAX_SKILL_LEVEL);
+  return skillDefs.filter((def) => canOfferSkillReward(def));
 }
 
 function acquiredSkillDefs() {
@@ -2118,7 +2224,9 @@ function weightedChoices(items, count) {
 function availableRewards() {
   const rewards = [];
   for (const def of skillDefs) {
-    if (skillLevel(def.key) >= MAX_SKILL_LEVEL) continue;
+    if (!canOfferSkillReward(def)) continue;
+    const maxLevel = skillMaxLevel(def);
+    const nextLevel = Math.min(maxLevel, skillLevel(def.key) + 1);
     rewards.push({
       id: `skill:${def.key}`,
       kind: "skill",
@@ -2127,8 +2235,8 @@ function availableRewards() {
       icon: def.icon,
       rarity: def.rarity,
       weight: def.weight,
-      summary: def.summary(Math.min(MAX_SKILL_LEVEL, skillLevel(def.key) + 1)),
-      meta: `${skillTypeLabel(def.type)} / LV ${skillLevel(def.key)} > ${skillLevel(def.key) + 1}`,
+      summary: def.summary(nextLevel),
+      meta: `${skillTypeLabel(def.type)} / LV ${skillLevel(def.key)} > ${nextLevel}`,
     });
   }
   for (const weapon of weapons) {
@@ -2200,14 +2308,15 @@ function availableRewards() {
 }
 
 function skillSummary(def, level = skillLevel(def.key)) {
-  const nextLevel = clamp(level || 1, 1, MAX_SKILL_LEVEL);
+  const nextLevel = clamp(level || 1, 1, skillMaxLevel(def));
   return def.summary(nextLevel);
 }
 
 function skillCardMarkup(def, options = {}) {
   const level = skillLevel(def.key);
-  const previewLevel = options.previewLevel ?? Math.min(MAX_SKILL_LEVEL, level + 1);
-  const levelText = options.choice ? `LV ${level} > ${previewLevel}` : `LV ${level}/${MAX_SKILL_LEVEL}`;
+  const maxLevel = skillMaxLevel(def);
+  const previewLevel = options.previewLevel ?? Math.min(maxLevel, level + 1);
+  const levelText = options.choice ? `LV ${level} > ${previewLevel}` : `LV ${level}/${maxLevel}`;
   return `
     <span class="skill-icon"><img src="${def.icon}" alt=""></span>
     <span>
@@ -2223,6 +2332,7 @@ function renderSkillPanel() {
   const visibleSkills = acquiredSkillDefs();
   visibleSkills.forEach((def) => {
     const level = skillLevel(def.key);
+    const maxLevel = skillMaxLevel(def);
     const button = document.createElement("button");
     button.type = "button";
     button.className = `skill-card ${def.type}`;
@@ -2234,7 +2344,7 @@ function renderSkillPanel() {
         <small>${skillTypeLabel(def.type)} / ${level > 0 ? def.summary(level) : "未取得"}</small>
         <span class="skill-meta">
           <span class="rarity-badge rarity-${def.rarity || "common"}">${rarityLabel(def.rarity || "common")}</span>
-          <span class="reward-kind">LV ${level}/${MAX_SKILL_LEVEL}</span>
+          <span class="reward-kind">LV ${level}/${maxLevel}</span>
         </span>
       </span>
     `;
@@ -2338,7 +2448,7 @@ function selectReward(reward) {
   let message = "";
   if (reward.kind === "skill") {
     const def = skillDefs.find((item) => item.key === reward.key);
-    if (!def || skillLevel(reward.key) >= MAX_SKILL_LEVEL) return;
+    if (!def || skillLevel(reward.key) >= skillMaxLevel(def)) return;
     player.skills[reward.key] += 1;
     if (def.onAcquire) def.onAcquire(player.skills[reward.key]);
     syncAllies();
@@ -2545,6 +2655,110 @@ function setActionButtonAffordability(button, cost) {
   button.disabled = !affordable;
   button.classList.toggle("unaffordable", !affordable);
   button.classList.toggle("affordable", affordable);
+}
+
+function hasAllyReviveSkill() {
+  return skillLevel("allyRevive") > 0;
+}
+
+function fallenAllyReviveCost(ally) {
+  const baseCost = ally.hireCost || hireDefById(ally.id)?.cost || {};
+  const multiplier = 1 + (ally.level || 1) * 0.5;
+  return Object.fromEntries(
+    Object.entries(baseCost)
+      .map(([key, value]) => [key, Math.ceil(value * multiplier)])
+      .filter(([, value]) => value > 0),
+  );
+}
+
+function reviveFallenAlly(index) {
+  const ally = state.fallenAllies[index];
+  const base = baseBuildings().find((item) => item.uid === state.menu.baseUid) || baseBuildings()[0] || null;
+  if (!ally) return;
+  if (!base) {
+    showToast("復活には拠点が必要です");
+    return;
+  }
+  if (!hasAllyReviveSkill()) {
+    showToast("味方復活スキルが必要です");
+    return;
+  }
+  const cost = fallenAllyReviveCost(ally);
+  if (!pay(cost)) {
+    showToast(`${ally.label}の復活には ${costText(cost)} が必要です`);
+    renderBasePanel(base);
+    return;
+  }
+
+  state.fallenAllies.splice(index, 1);
+  ally.fallen = false;
+  ally.fallenBaseUid = null;
+  ally.x = base.x + rand(-36, 36);
+  ally.y = base.y + rand(-24, 38);
+  ally.moving = false;
+  ally.harvesting = false;
+  ally.attackTimer = 0;
+  ally.attackFx = null;
+  clearAllyWorkTargets(ally);
+  syncAllyStats(ally, true);
+  if (isCombatAlly(ally)) state.defenders.push(ally);
+  else state.workers.push(ally);
+  showToast(`${allyDisplayName(ally)}が復活しました`);
+  addFloatText("復活", ally.x, ally.y - 52, "#a8e05f");
+  addParticles(ally.x, ally.y, "#a8e05f", 24, 150);
+  renderBasePanel(base);
+  renderStaticUi();
+}
+
+function renderBasePanel(base) {
+  if (!ui.baseReviveButtons) return;
+  ui.baseReviveButtons.innerHTML = "";
+  if (!base) {
+    ui.baseReviveButtons.innerHTML = `<div class="empty-panel">拠点がありません</div>`;
+    return;
+  }
+  if (!hasAllyReviveSkill()) {
+    ui.baseReviveButtons.innerHTML = `<div class="empty-panel">レベルアップ報酬「味方復活」で、力尽きた味方を蘇生できます</div>`;
+    return;
+  }
+  if (state.fallenAllies.length === 0) {
+    ui.baseReviveButtons.innerHTML = `<div class="empty-panel">力尽きた味方はいません</div>`;
+    return;
+  }
+
+  state.fallenAllies.forEach((ally, index) => {
+    const def = hireDefById(ally.id) || {};
+    const cost = fallenAllyReviveCost(ally);
+    const button = document.createElement("button");
+    button.type = "button";
+    button.className = "action-button revive-button";
+    button.innerHTML = actionButtonMarkup({
+      icon: def.icon || "assets/icons/skill-ally-revive.png",
+      label: allyDisplayName(ally),
+      detail: `LV ${ally.level || 1} / 復活してHP全回復`,
+      cost,
+    });
+    setActionButtonAffordability(button, cost);
+    button.addEventListener("click", () => reviveFallenAlly(index));
+    ui.baseReviveButtons.appendChild(button);
+  });
+}
+
+function openBaseMenu(base, clientX, clientY) {
+  clearPointerControl();
+  state.keys.clear();
+  renderStaticUi();
+  hideMenuPanels();
+  const point = clampMenuAnchor(clientX, clientY);
+  state.menu.open = true;
+  state.menu.submenu = "base";
+  state.menu.baseUid = base.uid;
+  state.menu.x = point.x;
+  state.menu.y = point.y;
+  ui.menuBackdrop.hidden = false;
+  ui.radialMenu.hidden = true;
+  renderBasePanel(base);
+  positionPanel(ui.basePanel, point.x, point.y);
 }
 
 function showToast(message) {
@@ -2811,6 +3025,8 @@ function saveAlly(ally) {
   return {
     id: ally.id,
     label: ally.label,
+    name: ally.name || ally.label,
+    unitLabel: ally.unitLabel || hireDefById(ally.id)?.label || ally.label,
     role: ally.role,
     kind: ally.kind || "defender",
     x: Math.round(ally.x),
@@ -2837,6 +3053,9 @@ function saveAlly(ally) {
     leash: ally.leash || null,
     healRange: ally.healRange || null,
     assignedBaseUid: ally.assignedBaseUid || null,
+    hireCost: clonePlain(ally.hireCost || hireDefById(ally.id)?.cost || {}),
+    fallen: Boolean(ally.fallen),
+    fallenBaseUid: ally.fallenBaseUid || null,
   };
 }
 
@@ -2897,6 +3116,7 @@ function createSaveData() {
     allies: {
       defenders: state.defenders.map(saveAlly),
       workers: state.workers.map(saveAlly),
+      fallen: state.fallenAllies.map(saveAlly),
     },
   };
 }
@@ -2936,7 +3156,7 @@ function restoreUnlocks(savedUnlocks = {}) {
 function restoreSkills(savedSkills = {}) {
   const skills = savedSkills || {};
   for (const key of Object.keys(player.skills)) {
-    player.skills[key] = clamp(cleanInt(skills[key], 0), 0, MAX_SKILL_LEVEL);
+    player.skills[key] = clamp(cleanInt(skills[key], 0), 0, skillMaxLevel(key));
   }
   player.skillCooldowns = {};
 }
@@ -3032,14 +3252,24 @@ function savedHomeOffset(saved, index) {
   };
 }
 
+function restoredCompanionName(saved, def = {}, index = 0) {
+  if (saved.name) return saved.name;
+  if (saved.label && saved.label !== def.label) return saved.label;
+  const pool = def.kind === "dog" ? dogNamePool : allyNamePool;
+  return pool[index % pool.length];
+}
+
 function restoreDefender(saved, index) {
   const def = hireDefs.find((item) => item.id === saved.id) || {};
   const attackType = saved.attackType || def.attackType;
   if (!attackType) return null;
   const homeOffset = savedHomeOffset(saved, index);
+  const name = restoredCompanionName(saved, def, index);
   const ally = {
     id: saved.id || def.id,
-    label: saved.label || def.label || "味方",
+    label: name,
+    name,
+    unitLabel: saved.unitLabel || def.label || saved.label || "味方",
     role: saved.role || def.role || "swordsman",
     kind: "defender",
     x: cleanNumber(saved.x, player.x + homeOffset.x),
@@ -3067,6 +3297,9 @@ function restoreDefender(saved, index) {
     attackFx: null,
     weaponId: saved.weaponId || def.weaponId || (attackType === "melee" ? "ironSword" : null),
     assignedBaseUid: saved.assignedBaseUid || null,
+    hireCost: clonePlain(saved.hireCost || def.cost || {}),
+    fallen: Boolean(saved.fallen),
+    fallenBaseUid: saved.fallenBaseUid || null,
   };
   syncAllyStats(ally);
   return ally;
@@ -3077,9 +3310,12 @@ function restoreWorker(saved, index) {
   const kind = saved.kind || def.kind;
   if (!kind || kind === "defender") return null;
   const homeOffset = savedHomeOffset(saved, index);
+  const name = restoredCompanionName(saved, def, index);
   const ally = {
     id: saved.id || def.id,
-    label: saved.label || def.label || "味方",
+    label: name,
+    name,
+    unitLabel: saved.unitLabel || def.label || saved.label || "味方",
     role: saved.role || def.role || kind,
     kind,
     x: cleanNumber(saved.x, player.x + homeOffset.x),
@@ -3109,6 +3345,9 @@ function restoreWorker(saved, index) {
     carryDrop: null,
     healRange: cleanNumber(saved.healRange, def.healRange || 0),
     assignedBaseUid: saved.assignedBaseUid || null,
+    hireCost: clonePlain(saved.hireCost || def.cost || {}),
+    fallen: Boolean(saved.fallen),
+    fallenBaseUid: saved.fallenBaseUid || null,
   };
   syncAllyStats(ally);
   return ally;
@@ -3117,8 +3356,20 @@ function restoreWorker(saved, index) {
 function restoreAllies(savedAllies = {}) {
   const savedDefenders = Array.isArray(savedAllies.defenders) ? savedAllies.defenders : [];
   const savedWorkers = Array.isArray(savedAllies.workers) ? savedAllies.workers : [];
+  const savedFallen = Array.isArray(savedAllies.fallen) ? savedAllies.fallen : [];
   state.defenders = savedDefenders.map((saved, index) => restoreDefender(saved, index)).filter(Boolean);
   state.workers = savedWorkers.map((saved, index) => restoreWorker(saved, index + state.defenders.length)).filter(Boolean);
+  state.fallenAllies = savedFallen.map((saved, index) => {
+    const def = hireDefById(saved.id) || {};
+    const offset = index + state.defenders.length + state.workers.length;
+    const restored = (saved.attackType || def.attackType)
+      ? restoreDefender(saved, offset)
+      : restoreWorker(saved, offset);
+    if (!restored) return null;
+    restored.hp = 0;
+    restored.fallen = true;
+    return restored;
+  }).filter(Boolean);
   syncAllies();
 }
 
@@ -3136,6 +3387,7 @@ function clearRuntimeWorldState() {
   state.flyItems = [];
   state.particles = [];
   state.floatText = [];
+  state.fallenAllies = [];
   state.resourceSpawnTimer = 0;
   state.spawnTimer = 0;
   state.nextBuildingUid = 1;
@@ -4334,7 +4586,7 @@ function updateDefenders(dt) {
 
     moveAllyToward(defender, homeX, homeY, dt, 8);
   }
-  state.defenders = state.defenders.filter((defender) => defender.hp > 0);
+  state.defenders = moveFallenAlliesToBase(state.defenders);
 }
 
 function findNearestResourceForWorker(worker) {
@@ -4760,7 +5012,7 @@ function updateWorkers(dt) {
     }
   }
 
-  state.workers = state.workers.filter((worker) => worker.hp > 0);
+  state.workers = moveFallenAlliesToBase(state.workers);
   for (const building of state.buildings) {
     if (building.repairReservedBy && !state.workers.includes(building.repairReservedBy)) {
       building.repairReservedBy = null;
@@ -5457,9 +5709,12 @@ function hirePerson(def) {
   }
 
   const homeOffset = formationOffset(state.defenders.length + state.workers.length);
+  const companionName = randomCompanionName(def);
   const allyBase = {
     id: def.id,
-    label: def.label,
+    label: companionName,
+    name: companionName,
+    unitLabel: def.label,
     role: def.role,
     kind: def.kind || "defender",
     x: player.x + homeOffset.x,
@@ -5475,13 +5730,16 @@ function hirePerson(def) {
     moveDir: "down",
     moving: false,
     homeOffset,
+    hireCost: clonePlain(def.cost || {}),
   };
 
   if (def.kind === "worker" || def.kind === "dog" || def.kind === "repairer" || def.kind === "healer") {
     const worker = {
       ...allyBase,
       id: def.id,
-      label: def.label,
+      label: companionName,
+      name: companionName,
+      unitLabel: def.label,
       role: def.role,
       kind: def.kind,
       targets: def.targets || [],
@@ -5500,7 +5758,7 @@ function hirePerson(def) {
     };
     syncAllyStats(worker, true);
     state.workers.push(worker);
-    showToast(`${def.label}を雇いました`);
+    showToast(`${allyDisplayName(worker)}を雇いました`);
     return;
   }
 
@@ -5520,7 +5778,7 @@ function hirePerson(def) {
   };
   syncAllyStats(defender, true);
   state.defenders.push(defender);
-  showToast(`${def.label}を雇いました`);
+  showToast(`${allyDisplayName(defender)}を雇いました`);
 }
 
 function upgradeTool(kind) {
@@ -6324,9 +6582,10 @@ function drawAllyStatus(ally, x, y, width = 40) {
   ctx.textBaseline = "middle";
   ctx.lineWidth = 3;
   ctx.strokeStyle = "rgba(23,20,20,0.72)";
-  ctx.strokeText(`LV${level}`, x, labelY);
+  const label = `${ally.label || allyTypeLabel(ally)} LV${level}`;
+  ctx.strokeText(label, x, labelY);
   ctx.fillStyle = "#f6f0db";
-  ctx.fillText(`LV${level}`, x, labelY);
+  ctx.fillText(label, x, labelY);
   ctx.fillStyle = "rgba(0,0,0,0.52)";
   ctx.fillRect(x - width / 2, barY, width, 4);
   ctx.fillStyle = "#65c47b";
@@ -6915,11 +7174,32 @@ function allyAtScreenPoint(clientX, clientY) {
   return best;
 }
 
+function baseAtScreenPoint(clientX, clientY) {
+  const point = screenToWorld(clientX, clientY);
+  let best = null;
+  let bestDistance = 82;
+  for (const base of baseBuildings()) {
+    const d = Math.hypot(base.x - point.x, base.y - point.y);
+    if (d < bestDistance) {
+      best = base;
+      bestDistance = d;
+    }
+  }
+  return best;
+}
+
 function handleWorldTap(clientX, clientY) {
   const ally = allyAtScreenPoint(clientX, clientY);
-  if (!ally) return false;
-  toggleAllyBaseAssignment(ally);
-  return true;
+  if (ally) {
+    toggleAllyBaseAssignment(ally);
+    return true;
+  }
+  const base = baseAtScreenPoint(clientX, clientY);
+  if (base) {
+    openBaseMenu(base, clientX, clientY);
+    return true;
+  }
+  return false;
 }
 
 function startPointer(event) {

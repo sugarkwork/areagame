@@ -746,6 +746,10 @@ button[disabled] {
   width: min(410px, calc(100vw - 24px));
 }
 
+.base-panel {
+  width: min(470px, calc(100vw - 24px));
+}
+
 .skill-panel {
   width: min(720px, calc(100vw - 24px));
 }
