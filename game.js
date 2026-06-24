@@ -112,6 +112,13 @@ siegeTurtleSpriteSheet.onload = () => {
 };
 siegeTurtleSpriteSheet.src = "assets/sprites/siege-turtle.png?v=20260616-0154";
 
+const treantSpriteSheet = new Image();
+let treantSpritesReady = false;
+treantSpriteSheet.onload = () => {
+  treantSpritesReady = true;
+};
+treantSpriteSheet.src = "assets/sprites/treant-jrpg-sheet.png?v=20260625-0016";
+
 const baseBuildingSpriteImage = new Image();
 let baseBuildingSpriteReady = false;
 baseBuildingSpriteImage.onload = () => {
@@ -359,6 +366,21 @@ const siegeTurtleSprite = {
   height: 188,
 };
 
+const treantSprite = {
+  down: [box(0, 0, 96, 96), box(96, 0, 96, 96), box(192, 0, 96, 96)],
+  right: [box(0, 96, 96, 96), box(96, 96, 96, 96), box(192, 96, 96, 96)],
+  up: [box(0, 192, 96, 96), box(96, 192, 96, 96), box(192, 192, 96, 96)],
+  sideFaces: "right",
+  width: 150,
+  height: 140,
+};
+
+const youngTreantSprite = {
+  ...treantSprite,
+  width: 78,
+  height: 72,
+};
+
 const baseBuildingSprite = {
   frame: box(0, 0, 128, 128),
   width: 124,
@@ -510,6 +532,9 @@ const player = {
     combo: 0,
     lightningBolt: 0,
     allyRevive: 0,
+    safePlace: 0,
+    baseMight: 0,
+    baseResolve: 0,
   },
   unlocks: {
     weapons: { knife: true },
@@ -772,6 +797,39 @@ const skillDefs = [
     summary: () => "拠点メニューから力尽きた味方を蘇生できるようになります",
   },
   {
+    key: "safePlace",
+    name: "安心できる場所",
+    type: "passive",
+    icon: "assets/icons/skill-safe-place.png",
+    rarity: "uncommon",
+    weight: 6,
+    maxLevel: 5,
+    requiresBase: true,
+    summary: (level) => `拠点範囲内の自分と味方が毎秒 ${(baseComfortRegenRate(level) * 100).toFixed(2)}% 回復`,
+  },
+  {
+    key: "baseMight",
+    name: "湧き上がる力",
+    type: "passive",
+    icon: "assets/icons/skill-base-might.png",
+    rarity: "uncommon",
+    weight: 6,
+    maxLevel: 5,
+    requiresBase: true,
+    summary: (level) => `拠点範囲内の自分と味方の攻撃力 +${Math.round(baseMightBonus(level) * 100)}%`,
+  },
+  {
+    key: "baseResolve",
+    name: "負けない心",
+    type: "passive",
+    icon: "assets/icons/skill-base-resolve.png",
+    rarity: "rare",
+    weight: 5,
+    maxLevel: 5,
+    requiresBase: true,
+    summary: (level) => `拠点範囲内の自分と味方の被ダメージ -${Math.round(baseResolveReduction(level) * 100)}%`,
+  },
+  {
     key: "combo",
     name: "連撃",
     type: "passive",
@@ -986,7 +1044,7 @@ const buildDefs = [
     rarity: "common",
     weight: 9,
     cost: { wood: 8, stone: 6, iron: 1 },
-    hp: 720,
+    hp: 540,
   },
   {
     id: "tower",
@@ -1008,7 +1066,7 @@ const buildDefs = [
     cost: { wood: 32, stone: 24, iron: 8, gold: 6, meat: 4 },
     hp: 860,
     healRadius: 440,
-    healRate: 0.012,
+    healRate: 0,
   },
 ];
 
@@ -1409,6 +1467,45 @@ const enemyDefs = {
     boss: true,
     knockbackResist: 0.18,
   },
+  youngTreant: {
+    id: "youngTreant",
+    label: "子トレント",
+    color: "#7a5a3c",
+    accent: "#89b765",
+    radius: 21,
+    hp: 86,
+    speed: [34, 42],
+    damage: 10,
+    attackCooldown: 1.2,
+    xp: 28,
+    meatChance: 0,
+    meatAmount: [0, 0],
+    weight: 1,
+    behavior: "melee",
+    knockbackResist: 0.65,
+  },
+  treantBoss: {
+    id: "treantBoss",
+    label: "古樹トレント",
+    color: "#6b4b2f",
+    accent: "#98c96a",
+    radius: 58,
+    hp: 2500,
+    speed: [5.5, 7.2],
+    damage: 28,
+    attackCooldown: 2.6,
+    range: 390,
+    projectileSpeed: 235,
+    xp: 320,
+    meatChance: 0,
+    meatAmount: [0, 0],
+    weight: 1,
+    behavior: "treantBoss",
+    boss: true,
+    summonThresholds: [0.75, 0.5, 0.25],
+    childId: "youngTreant",
+    knockbackResist: 0.22,
+  },
 };
 
 function resize() {
@@ -1578,6 +1675,10 @@ function drawBossSpriteFrame(frame, screenX, groundY, width, height, options = {
 
 function drawSiegeTurtleSpriteFrame(frame, screenX, groundY, width, height, options = {}) {
   return drawSpriteFrameFrom(siegeTurtleSpriteSheet, siegeTurtleSpritesReady, frame, screenX, groundY, width, height, options);
+}
+
+function drawTreantSpriteFrame(frame, screenX, groundY, width, height, options = {}) {
+  return drawSpriteFrameFrom(treantSpriteSheet, treantSpritesReady, frame, screenX, groundY, width, height, options);
 }
 
 function drawBaseBuildingSpriteFrame(frame, screenX, groundY, width, height, options = {}) {
@@ -1827,6 +1928,19 @@ function allyComboChance() {
   return clamp(skillLevel("combo") * 0.1, 0, 1);
 }
 
+function baseComfortRegenRate(level = skillLevel("safePlace")) {
+  if (level <= 0) return 0;
+  return Math.min(0.01, 0.001 + (level - 1) * 0.00225);
+}
+
+function baseMightBonus(level = skillLevel("baseMight")) {
+  return Math.min(0.3, Math.max(0, level) * 0.06);
+}
+
+function baseResolveReduction(level = skillLevel("baseResolve")) {
+  return Math.min(0.3, Math.max(0, level) * 0.06);
+}
+
 function lightningTargetCount(level) {
   return 1 + Math.floor((Math.max(1, level) - 1) / 3);
 }
@@ -1892,6 +2006,25 @@ function baseBuildings() {
 function baseRadius(base) {
   const defRadius = buildDefById("base")?.healRadius || 440;
   return Math.max(base?.healRadius || defRadius, defRadius);
+}
+
+function isInBaseRadius(entity, padding = 0) {
+  if (!entity) return false;
+  return baseBuildings().some((base) => (
+    Math.hypot(entity.x - base.x, entity.y - base.y) <= baseRadius(base) + padding
+  ));
+}
+
+function baseMightMultiplierFor(entity) {
+  const bonus = baseMightBonus();
+  return bonus > 0 && isInBaseRadius(entity) ? 1 + bonus : 1;
+}
+
+function baseDamageReductionFor(entity) {
+  const reduction = baseResolveReduction();
+  if (reduction <= 0) return 0;
+  if (entity !== player && !isAlly(entity)) return 0;
+  return isInBaseRadius(entity) ? reduction : 0;
 }
 
 function baseDutyRadiusFor(ally, base) {
@@ -2508,7 +2641,7 @@ function allyMaxHp(ally) {
 
 function allyDamage(ally) {
   const base = ally.baseDamage || ally.damage || 0;
-  return base * (1 + (ally.level - 1) * 0.1 + skillLevel("allyPower") * 0.07);
+  return base * (1 + (ally.level - 1) * 0.1 + skillLevel("allyPower") * 0.07) * baseMightMultiplierFor(ally);
 }
 
 function allyMoveSpeed(ally) {
@@ -3098,7 +3231,7 @@ function createSaveData() {
       hp: Math.round(building.hp),
       maxHp: Math.round(building.maxHp),
       healRadius: building.healRadius || null,
-      healRate: building.healRate || null,
+      healRate: building.healRate ?? null,
     })),
     traps: state.traps.map((trap) => ({
       id: trap.id,
@@ -3214,7 +3347,7 @@ function restoreBuildings(savedBuildings = []) {
       hp: clamp(cleanNumber(saved.hp, maxHp), 1, maxHp),
       maxHp,
       healRadius: def.id === "base" ? Math.max(cleanNumber(saved.healRadius, def.healRadius || 440), def.healRadius || 440) : null,
-      healRate: def.id === "base" ? cleanNumber(saved.healRate, def.healRate || 0.012) : null,
+      healRate: def.id === "base" ? cleanNumber(saved.healRate, def.healRate ?? 0) : null,
       attackTimer: 0,
       repairReservedBy: null,
     };
@@ -3637,33 +3770,48 @@ function siegeTurtleShamanCount(wave) {
   return Math.min(8, 2 + Math.floor(siegeTurtleTier(wave) / 2) + Math.max(0, siegeTurtleCount(wave) - 1));
 }
 
+function siegeTreantCount(wave) {
+  return Math.min(4, 1 + Math.floor(Math.max(0, siegeTurtleTier(wave) - 1) / 3));
+}
+
+function siegeTreantScale(wave) {
+  return 0.92 + Math.max(0, wave - 6) * 0.038;
+}
+
+function siegeTreantHpScale(wave) {
+  return siegeTreantScale(wave) * (1 + siegeTurtleTier(wave) * 0.1);
+}
+
 function addSiegeTurtleToWaveDef(def, wave) {
   if (wave % 6 !== 0) return def;
   const turtleCount = siegeTurtleCount(wave);
   const shamanCount = siegeTurtleShamanCount(wave);
+  const treantCount = siegeTreantCount(wave);
   const hpPercent = Math.round(siegeTurtleHpScale(wave) * 100);
-  const turtleDetail = `砦亀${turtleCount}体とゴブリンシャーマン${shamanCount}体が進みます。亀HP ${hpPercent}%相当。回復役を優先して倒してください。`;
-  const total = def.total + turtleCount + shamanCount;
+  const treantHpPercent = Math.round(siegeTreantHpScale(wave) * 100);
+  const turtleDetail = `砦亀${turtleCount}体、古樹トレント${treantCount}体、ゴブリンシャーマン${shamanCount}体が進みます。亀HP ${hpPercent}%、トレントHP ${treantHpPercent}%相当。回復役と召喚役を優先してください。`;
+  const total = def.total + turtleCount + shamanCount + treantCount;
   return {
     ...def,
     total,
-    maxActive: def.maxActive + turtleCount + shamanCount,
-    timeout: def.timeout + 35 + turtleCount * 12 + shamanCount * 4,
+    maxActive: def.maxActive + turtleCount + shamanCount + treantCount,
+    timeout: def.timeout + 45 + turtleCount * 12 + treantCount * 18 + shamanCount * 4,
     fixedSpawns: [
       ...(def.fixedSpawns || []),
       { id: "siegeTurtle", count: turtleCount, scale: siegeTurtleScale(wave), hpScale: siegeTurtleHpScale(wave) },
+      { id: "treantBoss", count: treantCount, scale: siegeTreantScale(wave), hpScale: siegeTreantHpScale(wave) },
       { id: "goblinShaman", count: shamanCount, scale: Math.max(def.scale || 1, 1 + Math.max(0, wave - 6) * 0.04) },
     ],
     event: def.event
       ? {
         ...def.event,
-        label: `${def.event.label} + 砦亀`,
+        label: `${def.event.label} + 砦亀・トレント`,
         detail: `${stripEnemyCountDetail(def.event.detail)} ${turtleDetail} 敵数 ${total}体`,
       }
       : {
         type: "siegeTurtle",
-        label: "砦亀襲来",
-        title: `第${wave}ウェーブ 砦亀襲来`,
+        label: "砦亀・トレント襲来",
+        title: `第${wave}ウェーブ 砦亀・トレント襲来`,
         detail: `${turtleDetail} 敵数 ${total}体`,
       },
   };
@@ -3859,6 +4007,8 @@ function spawnEnemy(type = "redSlime", options = {}) {
     healRate: def.healRate || 0,
     healPercent: def.healPercent || 0,
     summonCooldown: def.summonCooldown || null,
+    summonThresholds: def.summonThresholds ? [...def.summonThresholds] : null,
+    childId: def.childId || null,
     threatRadius: def.threatRadius || 0,
     noDrop: Boolean(def.noDrop || options.noDrop),
     attackTimer: 0,
@@ -3937,7 +4087,7 @@ function equippedWeapon() {
 }
 
 function weaponDamage(weapon) {
-  return Math.round((weapon.damage + enchantLevel(weapon, "damage") * 5) * (1 + (player.level - 1) * 0.045));
+  return Math.round((weapon.damage + enchantLevel(weapon, "damage") * 5) * (1 + (player.level - 1) * 0.045) * baseMightMultiplierFor(player));
 }
 
 function weaponHeal(weapon) {
@@ -4073,12 +4223,14 @@ function damageEnemy(enemy, damage, source, options = {}) {
 }
 
 function applyDamage(target, amount, source, color = "#e7564f") {
-  target.hp -= amount;
-  addFloatText(`-${Math.round(amount)}`, target.x, target.y - 30, color);
+  const reduction = baseDamageReductionFor(target);
+  const finalAmount = amount * (1 - reduction);
+  target.hp -= finalAmount;
+  addFloatText(`-${Math.round(finalAmount)}`, target.x, target.y - 30, color);
   addParticles(target.x, target.y, color, 6, 80);
   const counterLevel = skillLevel("counter");
   if (counterLevel > 0 && source && state.enemies.includes(source)) {
-    const reflected = amount * counterLevel * 0.07;
+    const reflected = finalAmount * counterLevel * 0.07;
     if (reflected > 0.4) {
       damageEnemy(source, reflected, target, {
         knockback: 25 + counterLevel * 4,
@@ -4394,9 +4546,11 @@ function updateTraps(dt) {
 
 function healTargetFromBase(base, target, dt) {
   if (!target || target.hp <= 0 || target.hp >= target.maxHp) return false;
+  if (target !== player && !isAlly(target)) return false;
   if (Math.hypot(target.x - base.x, target.y - base.y) > baseRadius(base)) return false;
-  const rate = base.healRate || buildDefById("base")?.healRate || 0.012;
-  const healed = Math.min(target.maxHp - target.hp, Math.max(0.55, target.maxHp * rate) * dt);
+  const rate = baseComfortRegenRate();
+  if (rate <= 0) return false;
+  const healed = Math.min(target.maxHp - target.hp, target.maxHp * rate * dt);
   target.hp += healed;
   return healed > 0;
 }
@@ -4408,7 +4562,6 @@ function updateBaseHealing(dt) {
       player,
       ...state.defenders,
       ...state.workers,
-      ...state.buildings,
     ];
     for (const target of targets) {
       if (healTargetFromBase(base, target, dt)) healedAny = true;
@@ -5467,6 +5620,105 @@ function updateSiegeTurtleEnemy(enemy, dt) {
   enemy.y += (dy / len) * enemy.speed * slowFactor * terrainSpeed * crushSpeed * dt;
 }
 
+function summonTreantChildren(enemy) {
+  if (enemy.hp <= 0 || !enemy.summonThresholds?.length || enemy.maxHp <= 0) return;
+  const hpRatio = clamp(enemy.hp / enemy.maxHp, 0, 1);
+  while (enemy.summonThresholds.length && hpRatio <= enemy.summonThresholds[0]) {
+    enemy.summonThresholds.shift();
+    const count = Math.floor(rand(2, 5));
+    for (let i = 0; i < count; i += 1) {
+      const angle = (i / count) * TAU + rand(-0.28, 0.28);
+      const distance = rand(enemy.radius + 28, enemy.radius + 78);
+      const child = spawnEnemy(enemy.childId || "youngTreant", {
+        point: {
+          x: enemy.x + Math.cos(angle) * distance,
+          y: enemy.y + Math.sin(angle) * distance,
+        },
+        scale: Math.max(0.8, (enemy.scale || 1) * 0.9),
+        hpScale: Math.max(0.85, (enemy.scale || 1) * 0.9),
+      });
+      child.rooted = 0.25;
+      child.moveDir = enemy.moveDir;
+    }
+    addFloatText("子トレント召喚", enemy.x, enemy.y - enemy.radius - 42, "#98c96a");
+    addParticles(enemy.x, enemy.y, "#98c96a", 24, 155);
+  }
+}
+
+function applyTreantCloseKnockback(enemy, dt) {
+  enemy.trampleTimer = Math.max(0, (enemy.trampleTimer || 0) - dt);
+  if (enemy.trampleTimer > 0) return;
+  const targets = [
+    ...(player.hiddenTime > 0 ? [] : [player]),
+    ...state.defenders,
+    ...state.workers,
+  ].filter((target) => target.hp > 0);
+  let hit = false;
+  const damage = (enemy.damage || 28) * Math.sqrt(enemy.scale || 1) * 0.9;
+  for (const target of targets) {
+    const d = Math.hypot(target.x - enemy.x, target.y - enemy.y);
+    if (d > enemy.radius + (target.radius || player.radius) + 20) continue;
+    applyDamage(target, damage, enemy, "#8ebf5b");
+    knockbackEntityFrom(target, enemy, 150);
+    addFloatText("跳ね飛ばし", target.x, target.y - 54, "#b9dc7a");
+    hit = true;
+  }
+  if (hit) {
+    enemy.trampleTimer = 1.25;
+    addParticles(enemy.x, enemy.y, "#8ebf5b", 18, 125);
+  }
+}
+
+function fireTreantProjectile(enemy, target, range) {
+  const dx = target.x - enemy.x;
+  const dy = target.y - enemy.y;
+  const len = Math.hypot(dx, dy) || 1;
+  const speed = enemy.projectileSpeed || 235;
+  enemy.attackTimer = enemy.attackCooldown || 2.6;
+  state.projectiles.push({
+    faction: "enemy",
+    x: enemy.x + (dx / len) * Math.min(enemy.radius, 42),
+    y: enemy.y + (dy / len) * Math.min(enemy.radius, 42) - 12,
+    vx: (dx / len) * speed,
+    vy: (dy / len) * speed,
+    life: range / speed,
+    radius: 10,
+    damage: (enemy.damage || 28) * 0.9,
+    color: "#98c96a",
+    options: { color: "#98c96a" },
+  });
+  addParticles(enemy.x, enemy.y - 12, "#98c96a", 8, 95);
+}
+
+function updateTreantEnemy(enemy, dt) {
+  summonTreantChildren(enemy);
+  applyTreantCloseKnockback(enemy, dt);
+  const target = findSiegeTurtleTarget(enemy);
+  if (!target) {
+    enemy.moving = false;
+    return;
+  }
+
+  const dx = target.x - enemy.x;
+  const dy = target.y - enemy.y;
+  const targetDistance = enemyTargetDistance(enemy, target);
+  enemy.moveDir = directionFromVector(dx, dy, enemy.moveDir);
+
+  if (targetDistance < enemy.radius + (target.radius || player.radius) + 8) {
+    enemyMeleeAttack(enemy, target, targetDistance);
+    return;
+  }
+
+  const range = enemy.range || 390;
+  if (targetDistance <= range) {
+    enemy.moving = false;
+    if (enemy.attackTimer <= 0) fireTreantProjectile(enemy, target, range);
+    return;
+  }
+
+  moveEnemyToward(enemy, target, dt, 0.8);
+}
+
 function updateEnemies(dt) {
   updateWave(dt);
 
@@ -5493,6 +5745,11 @@ function updateEnemies(dt) {
 
     if (enemy.behavior === "siegeTurtle") {
       updateSiegeTurtleEnemy(enemy, dt);
+      continue;
+    }
+
+    if (enemy.behavior === "treantBoss") {
+      updateTreantEnemy(enemy, dt);
       continue;
     }
 
@@ -5691,7 +5948,7 @@ function placeBuild(def) {
       hp: def.hp,
       maxHp: def.hp,
       healRadius: def.id === "base" ? def.healRadius || 440 : null,
-      healRate: def.id === "base" ? def.healRate || 0.012 : null,
+      healRate: def.id === "base" ? (def.healRate ?? 0) : null,
       attackTimer: 0,
     });
     showToast(`${def.label}を建てました`);
@@ -5906,7 +6163,7 @@ function renderStaticUi() {
       detail: def.type === "trap"
         ? `耐久 ${def.durability} / ${def.life}秒`
         : def.id === "base"
-          ? `HP ${def.hp} / 回復範囲 ${def.healRadius}px`
+          ? `HP ${def.hp} / 範囲 ${def.healRadius}px`
           : `HP ${def.hp}`,
       cost: def.cost,
     });
@@ -6193,6 +6450,33 @@ function drawPlayer() {
 function drawEnemy(enemy) {
   const p = worldToScreen(enemy);
   const def = enemyDefById(enemy.type);
+  if ((enemy.type === "treantBoss" || enemy.type === "youngTreant") && treantSpritesReady) {
+    const sprite = enemy.type === "treantBoss" ? treantSprite : youngTreantSprite;
+    const frame = spriteFrame(sprite, enemy.moveDir, enemy.moving, enemy.type === "treantBoss" ? 3.2 : 5.4);
+    const groundOffset = enemy.type === "treantBoss" ? 34 : 24;
+    drawSpriteShadow(p.x, p.y + groundOffset - 8, sprite.width * 0.62, enemy.type === "treantBoss" ? 18 : 10, 0.28);
+    drawTreantSpriteFrame(frame.frame, p.x, p.y + groundOffset, frame.width, frame.height, { flip: frame.flip });
+    if (enemy.hurtFlash > 0) {
+      ctx.fillStyle = "rgba(255,255,190,0.26)";
+      ctx.beginPath();
+      ctx.arc(p.x, p.y + 2, enemy.radius + 8, 0, TAU);
+      ctx.fill();
+    }
+    if (enemy.rooted > 0 || enemy.slow > 0 || enemy.poison > 0) {
+      ctx.strokeStyle = enemy.poison > 0 ? "#a8e05f" : "#d8e6d3";
+      ctx.lineWidth = enemy.type === "treantBoss" ? 3 : 2;
+      ctx.beginPath();
+      ctx.arc(p.x, p.y + 4, enemy.radius + 8, 0, TAU);
+      ctx.stroke();
+    }
+    const barWidth = enemy.boss ? Math.max(92, enemy.radius * 2.25) : 42;
+    const barY = p.y - sprite.height + groundOffset - (enemy.boss ? 8 : 0);
+    ctx.fillStyle = "rgba(0,0,0,0.56)";
+    ctx.fillRect(p.x - barWidth / 2, barY, barWidth, enemy.boss ? 6 : 4);
+    ctx.fillStyle = enemy.boss ? "#e7564f" : "#65c47b";
+    ctx.fillRect(p.x - barWidth / 2, barY, barWidth * clamp(enemy.hp / enemy.maxHp, 0, 1), enemy.boss ? 6 : 4);
+    return;
+  }
   if (enemy.type === "siegeTurtle" && siegeTurtleSpritesReady) {
     const frame = spriteFrame(siegeTurtleSprite, enemy.moveDir, enemy.moving, 3.6);
     drawSpriteShadow(p.x, p.y + 22, siegeTurtleSprite.width * 0.7, 17, 0.3);
