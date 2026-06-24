@@ -2163,6 +2163,12 @@ function baseRadius(base) {
   return Math.max(base?.healRadius || defRadius, defRadius);
 }
 
+function baseEffectOverlapAt(x, y, radius = buildDefById("base")?.healRadius || 440) {
+  return baseBuildings().find((base) => (
+    Math.hypot(x - base.x, y - base.y) <= baseRadius(base) + radius
+  )) || null;
+}
+
 function isInBaseRadius(entity, padding = 0) {
   if (!entity) return false;
   return baseBuildings().some((base) => (
@@ -4951,17 +4957,32 @@ function healTargetFromBase(base, target, dt) {
   return healed > 0;
 }
 
-function updateBaseHealing(dt) {
+function healingBaseForTarget(target) {
+  let best = null;
+  let bestDistance = Infinity;
   for (const base of baseBuildings()) {
-    let healedAny = false;
-    const targets = [
-      player,
-      ...state.defenders,
-      ...state.workers,
-    ];
-    for (const target of targets) {
-      if (healTargetFromBase(base, target, dt)) healedAny = true;
-    }
+    const distance = Math.hypot(target.x - base.x, target.y - base.y);
+    if (distance > baseRadius(base) || distance >= bestDistance) continue;
+    best = base;
+    bestDistance = distance;
+  }
+  return best;
+}
+
+function updateBaseHealing(dt) {
+  const healedBases = new Set();
+  const targets = [
+    player,
+    ...state.defenders,
+    ...state.workers,
+  ];
+  for (const target of targets) {
+    const base = healingBaseForTarget(target);
+    if (base && healTargetFromBase(base, target, dt)) healedBases.add(base);
+  }
+
+  for (const base of baseBuildings()) {
+    const healedAny = healedBases.has(base);
     base.healPulse = healedAny ? (base.healPulse || 0) + dt * 5 : 0;
     base.healFxTimer = (base.healFxTimer || 0) - dt;
     if (healedAny && base.healFxTimer <= 0) {
@@ -6539,13 +6560,20 @@ function placeBuild(def) {
     showToast(`${def.label}はまだ解放されていません`);
     return;
   }
+
+  const x = player.x;
+  const y = player.y;
+
+  if (def.id === "base" && baseEffectOverlapAt(x, y, def.healRadius || 440)) {
+    showToast("拠点の範囲内に拠点を立てられない");
+    addFloatText("設置不可", x, y - 54, "#f87171");
+    return;
+  }
+
   if (!pay(def.cost)) {
     showToast(`${def.label}には ${costText(def.cost)} が必要です`);
     return;
   }
-
-  const x = player.x;
-  const y = player.y;
 
   if (def.type === "trap") {
     state.traps.push({
