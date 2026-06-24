@@ -27,6 +27,7 @@ const ui = {
   buildButtons: document.querySelector("#buildButtons"),
   hireButtons: document.querySelector("#hireButtons"),
   skillButtons: document.querySelector("#skillButtons"),
+  allyList: document.querySelector("#allyList"),
   baseReviveButtons: document.querySelector("#baseReviveButtons"),
   levelUpBackdrop: document.querySelector("#levelUpBackdrop"),
   levelUpPanel: document.querySelector("#levelUpPanel"),
@@ -40,6 +41,7 @@ const ui = {
   buildPanel: document.querySelector("#buildPanel"),
   hirePanel: document.querySelector("#hirePanel"),
   skillPanel: document.querySelector("#skillPanel"),
+  allyPanel: document.querySelector("#allyPanel"),
   basePanel: document.querySelector("#basePanel"),
   menuBackdrop: document.querySelector("#menuBackdrop"),
   radialMenu: document.querySelector("#radialMenu"),
@@ -48,6 +50,7 @@ const ui = {
   radialBuild: document.querySelector('[data-menu="build"]'),
   radialHire: document.querySelector('[data-menu="hire"]'),
   radialSkills: document.querySelector('[data-menu="skills"]'),
+  radialAllies: document.querySelector('[data-menu="allies"]'),
   joystick: document.querySelector("#joystick"),
   joystickKnob: document.querySelector("#joystickKnob"),
   eventAlert: document.querySelector("#eventAlert"),
@@ -89,6 +92,9 @@ const RESOURCE_SPAWN_CAPS = {
   iron: 13,
   starstone: 1,
 };
+const RARE_MONSTER_TYPES = ["swampWisp", "lakeSprite"];
+const RARE_MONSTER_MAX_ACTIVE = 3;
+const RARE_MONSTER_SPAWN_INTERVAL = [18, 32];
 
 function playerXpRequired(level) {
   const earlyLevel = clamp(level, 1, PLAYER_XP_EARLY_TARGET_LEVEL);
@@ -133,6 +139,13 @@ treantSpriteSheet.onload = () => {
   treantSpritesReady = true;
 };
 treantSpriteSheet.src = "assets/sprites/treant-jrpg-sheet.png?v=20260625-0016";
+
+const rareMonsterSpriteSheet = new Image();
+let rareMonsterSpritesReady = false;
+rareMonsterSpriteSheet.onload = () => {
+  rareMonsterSpritesReady = true;
+};
+rareMonsterSpriteSheet.src = "assets/sprites/rare-terrain-monsters.png?v=20260625-0108";
 
 const baseBuildingSpriteImage = new Image();
 let baseBuildingSpriteReady = false;
@@ -199,6 +212,11 @@ for (const [key, src] of Object.entries(weaponIconSources)) {
   weaponIconImages[key] = new Image();
   weaponIconImages[key].src = src;
 }
+
+const portraitPools = {
+  mage: Array.from({ length: 20 }, (_, index) => `assets/portraits/mage-${String(index + 1).padStart(2, "0")}.png`),
+  healer: Array.from({ length: 20 }, (_, index) => `assets/portraits/healer-${String(index + 1).padStart(2, "0")}.png`),
+};
 
 const box = (x, y, w, h) => ({ x, y, w, h });
 const TERRAIN_TILE_SIZE = 96;
@@ -396,6 +414,25 @@ const youngTreantSprite = {
   height: 72,
 };
 
+const rareMonsterSprites = {
+  swampWisp: {
+    down: [box(0, 0, 64, 64), box(64, 0, 64, 64), box(128, 0, 64, 64)],
+    right: [box(0, 64, 64, 64), box(64, 64, 64, 64), box(128, 64, 64, 64)],
+    up: [box(0, 128, 64, 64), box(64, 128, 64, 64), box(128, 128, 64, 64)],
+    sideFaces: "right",
+    width: 50,
+    height: 48,
+  },
+  lakeSprite: {
+    down: [box(0, 192, 64, 64), box(64, 192, 64, 64), box(128, 192, 64, 64)],
+    right: [box(0, 256, 64, 64), box(64, 256, 64, 64), box(128, 256, 64, 64)],
+    up: [box(0, 320, 64, 64), box(64, 320, 64, 64), box(128, 320, 64, 64)],
+    sideFaces: "right",
+    width: 52,
+    height: 52,
+  },
+};
+
 const baseBuildingSprite = {
   frame: box(0, 0, 128, 128),
   width: 124,
@@ -503,6 +540,7 @@ const state = {
   particles: [],
   floatText: [],
   resourceSpawnTimer: 0,
+  rareSpawnTimer: rand(8, 16),
 };
 
 const player = {
@@ -1232,6 +1270,22 @@ function randomCompanionName(def) {
   return source[Math.floor(Math.random() * source.length)];
 }
 
+function portraitPoolForRole(role) {
+  return portraitPools[role] || [];
+}
+
+function randomPortraitFor(defOrRole) {
+  const role = typeof defOrRole === "string" ? defOrRole : defOrRole?.role;
+  const pool = portraitPoolForRole(role);
+  if (pool.length === 0) return null;
+  return pool[Math.floor(Math.random() * pool.length)];
+}
+
+function restoredPortrait(saved, def = {}) {
+  if (saved?.portrait) return saved.portrait;
+  return randomPortraitFor(def.role || saved?.role);
+}
+
 function allyTypeLabel(ally) {
   return ally.unitLabel || hireDefById(ally.id)?.label || ally.role || "味方";
 }
@@ -1396,6 +1450,51 @@ const enemyDefs = {
     weight: 0,
     behavior: "melee",
     noDrop: true,
+  },
+  swampWisp: {
+    id: "swampWisp",
+    label: "沼灯のウィスプ",
+    color: "#5fcf73",
+    accent: "#f1b84b",
+    radius: 18,
+    hp: 84,
+    speed: [46, 58],
+    damage: 13,
+    attackCooldown: 1.18,
+    xp: 72,
+    meatChance: 0,
+    meatAmount: [0, 0],
+    weight: 0,
+    behavior: "terrainRare",
+    terrainKind: "swamp",
+    rare: true,
+    noDrop: true,
+    roamRadius: 560,
+    knockbackResist: 0.72,
+  },
+  lakeSprite: {
+    id: "lakeSprite",
+    label: "湖霊",
+    color: "#7dd3ff",
+    accent: "#d8f3ff",
+    radius: 17,
+    hp: 96,
+    speed: [38, 50],
+    damage: 11,
+    attackCooldown: 1.75,
+    range: 225,
+    projectileSpeed: 270,
+    xp: 84,
+    meatChance: 0,
+    meatAmount: [0, 0],
+    weight: 0,
+    behavior: "terrainRare",
+    terrainKind: "pond",
+    rare: true,
+    rareAttackStyle: "ranged",
+    noDrop: true,
+    roamRadius: 620,
+    knockbackResist: 0.8,
   },
   wolf: {
     id: "wolf",
@@ -1696,6 +1795,10 @@ function drawTreantSpriteFrame(frame, screenX, groundY, width, height, options =
   return drawSpriteFrameFrom(treantSpriteSheet, treantSpritesReady, frame, screenX, groundY, width, height, options);
 }
 
+function drawRareMonsterSpriteFrame(frame, screenX, groundY, width, height, options = {}) {
+  return drawSpriteFrameFrom(rareMonsterSpriteSheet, rareMonsterSpritesReady, frame, screenX, groundY, width, height, options);
+}
+
 function drawBaseBuildingSpriteFrame(frame, screenX, groundY, width, height, options = {}) {
   return drawSpriteFrameFrom(baseBuildingSpriteImage, baseBuildingSpriteReady, frame, screenX, groundY, width, height, options);
 }
@@ -1740,6 +1843,7 @@ function hideMenuPanels() {
   ui.buildPanel.hidden = true;
   ui.hirePanel.hidden = true;
   ui.skillPanel.hidden = true;
+  if (ui.allyPanel) ui.allyPanel.hidden = true;
   ui.basePanel.hidden = true;
 }
 
@@ -1830,6 +1934,7 @@ function openSubmenu(kind) {
     build: ui.buildPanel,
     hire: ui.hirePanel,
     skills: hasAcquiredSkills() ? ui.skillPanel : null,
+    allies: hasVisibleAllies() ? ui.allyPanel : null,
   };
   const panel = panels[kind];
   if (panel) positionPanel(panel, state.menu.x, state.menu.y);
@@ -2237,6 +2342,14 @@ function unlockedHires() {
   return hireDefs.filter((def) => isUnlocked("hires", def.id));
 }
 
+function activeAllies() {
+  return [...state.defenders, ...state.workers].filter((ally) => ally.hp > 0 && !ally.fallen);
+}
+
+function hasVisibleAllies() {
+  return activeAllies().length > 0 || state.fallenAllies.length > 0;
+}
+
 function menuAvailability() {
   return {
     weapons: unlockedWeapons().length > 0,
@@ -2244,6 +2357,7 @@ function menuAvailability() {
     build: unlockedBuilds().length > 0,
     hire: unlockedHires().length > 0,
     skills: hasAcquiredSkills(),
+    allies: hasVisibleAllies(),
   };
 }
 
@@ -2254,6 +2368,7 @@ function updateRadialMenuAvailability() {
   if (ui.radialBuild) ui.radialBuild.hidden = !availability.build;
   if (ui.radialHire) ui.radialHire.hidden = !availability.hire;
   if (ui.radialSkills) ui.radialSkills.hidden = !availability.skills;
+  if (ui.radialAllies) ui.radialAllies.hidden = !availability.allies;
   return availability;
 }
 
@@ -3200,6 +3315,7 @@ function saveAlly(ally) {
     label: ally.label,
     name: ally.name || ally.label,
     unitLabel: ally.unitLabel || hireDefById(ally.id)?.label || ally.label,
+    portrait: ally.portrait || null,
     role: ally.role,
     kind: ally.kind || "defender",
     x: Math.round(ally.x),
@@ -3443,6 +3559,7 @@ function restoreDefender(saved, index) {
     label: name,
     name,
     unitLabel: saved.unitLabel || def.label || saved.label || "味方",
+    portrait: restoredPortrait(saved, def),
     role: saved.role || def.role || "swordsman",
     kind: "defender",
     x: cleanNumber(saved.x, player.x + homeOffset.x),
@@ -3489,6 +3606,7 @@ function restoreWorker(saved, index) {
     label: name,
     name,
     unitLabel: saved.unitLabel || def.label || saved.label || "味方",
+    portrait: restoredPortrait(saved, def),
     role: saved.role || def.role || kind,
     kind,
     x: cleanNumber(saved.x, player.x + homeOffset.x),
@@ -3562,6 +3680,7 @@ function clearRuntimeWorldState() {
   state.floatText = [];
   state.fallenAllies = [];
   state.resourceSpawnTimer = 0;
+  resetRareSpawnTimer();
   state.spawnTimer = 0;
   state.nextBuildingUid = 1;
 }
@@ -3989,8 +4108,8 @@ function startWave(index = state.wave.index) {
 
 function advanceWave(reason = "clear") {
   if (reason === "timeout") {
-    state.enemies.forEach((enemy) => addParticles(enemy.x, enemy.y, enemyDefById(enemy.type).color, 8, 90));
-    state.enemies.length = 0;
+    activeWaveEnemies().forEach((enemy) => addParticles(enemy.x, enemy.y, enemyDefById(enemy.type).color, 8, 90));
+    state.enemies = state.enemies.filter((enemy) => enemy.rare);
     showToast(`第${state.wave.index}ウェーブ時間切れ。次のウェーブへ`);
   } else {
     showToast(`第${state.wave.index}ウェーブ突破`);
@@ -4019,15 +4138,79 @@ function enemySpawnPoint(anchor = nextEnemySpawnAnchor()) {
   };
 }
 
+function activeWaveEnemies() {
+  return state.enemies.filter((enemy) => enemy.hp > 0 && !enemy.rare);
+}
+
+function activeWaveEnemyCount() {
+  return activeWaveEnemies().length;
+}
+
+function activeRareEnemyCount(type = null) {
+  return state.enemies.filter((enemy) => enemy.hp > 0 && enemy.rare && (!type || enemy.type === type)).length;
+}
+
+function resetRareSpawnTimer() {
+  state.rareSpawnTimer = rand(RARE_MONSTER_SPAWN_INTERVAL[0], RARE_MONSTER_SPAWN_INTERVAL[1]);
+}
+
+function findRareTerrainSpawnPoint(terrainKind) {
+  const anchors = [player, ...baseBuildings()];
+  for (let i = 0; i < 180; i += 1) {
+    const anchor = anchors[Math.floor(rand(0, anchors.length))] || player;
+    const angle = rand(0, TAU);
+    const distance = rand(420, 1850);
+    const point = {
+      x: anchor.x + Math.cos(angle) * distance,
+      y: anchor.y + Math.sin(angle) * distance,
+    };
+    if (terrainAtPosition(point.x, point.y).kind === terrainKind) return point;
+  }
+  return null;
+}
+
+function spawnRareMonster(type = null) {
+  if (activeRareEnemyCount() >= RARE_MONSTER_MAX_ACTIVE) return null;
+  const candidates = (type ? [type] : RARE_MONSTER_TYPES)
+    .filter((id) => activeRareEnemyCount(id) < 2)
+    .map((id) => enemyDefById(id))
+    .filter((def) => def.rare && def.terrainKind);
+  if (candidates.length === 0) return null;
+  const def = candidates[Math.floor(rand(0, candidates.length))];
+  const point = findRareTerrainSpawnPoint(def.terrainKind);
+  if (!point) return null;
+  const enemy = spawnEnemy(def.id, { point, rare: true, scale: 1, hpScale: 1 });
+  enemy.spawnX = point.x;
+  enemy.spawnY = point.y;
+  enemy.roamTarget = null;
+  addFloatText(def.terrainKind === "pond" ? "湖霊出現" : "沼灯出現", enemy.x, enemy.y - 42, def.accent);
+  return enemy;
+}
+
+function updateRareMonsterSpawns(dt) {
+  state.rareSpawnTimer -= dt;
+  if (state.rareSpawnTimer > 0) return;
+  resetRareSpawnTimer();
+  if (activeRareEnemyCount() >= RARE_MONSTER_MAX_ACTIVE) return;
+  if (Math.random() > 0.38) return;
+  const enemy = spawnRareMonster();
+  if (enemy) {
+    const terrainLabel = enemy.terrainKind === "pond" ? "湖" : "沼";
+    showToast(`${terrainLabel}に${enemy.label}が現れました`);
+  }
+}
+
 function spawnEnemy(type = "redSlime", options = {}) {
   const def = enemyDefById(type);
   const point = options.point || enemySpawnPoint(options.anchor);
-  const waveScale = options.scale || currentWaveDef().scale || 1;
+  const waveScale = options.scale || (def.rare ? 1 : currentWaveDef().scale || 1);
   const hpScale = options.hpScale || waveScale;
   const hp = Math.round(def.hp * hpScale * ENEMY_HP_MULTIPLIER);
   const enemy = {
     type: def.id,
     label: def.label,
+    color: def.color,
+    accent: def.accent,
     x: point.x,
     y: point.y,
     radius: def.radius,
@@ -4038,6 +4221,13 @@ function spawnEnemy(type = "redSlime", options = {}) {
     xp: Math.round(def.xp * Math.max(waveScale, hpScale * 0.8)),
     boss: Boolean(def.boss || options.boss),
     scale: waveScale,
+    rare: Boolean(def.rare || options.rare),
+    terrainKind: def.terrainKind || options.terrainKind || null,
+    rareAttackStyle: def.rareAttackStyle || null,
+    spawnX: point.x,
+    spawnY: point.y,
+    roamRadius: def.roamRadius || 520,
+    roamTarget: null,
     attackCooldown: def.attackCooldown,
     behavior: def.behavior,
     range: def.range || 0,
@@ -4092,7 +4282,7 @@ function updateWave(dt) {
     showToast(`第${wave.index}ウェーブ残り10秒`);
   }
 
-  while (wave.fixedQueue?.length && state.enemies.length < def.maxActive && wave.spawned < def.total) {
+  while (wave.fixedQueue?.length && activeWaveEnemyCount() < def.maxActive && wave.spawned < def.total) {
     const spawn = wave.fixedQueue.shift();
     spawnEnemy(spawn.id, { scale: spawn.scale, hpScale: spawn.hpScale, boss: spawn.boss });
     wave.spawned += 1;
@@ -4101,14 +4291,14 @@ function updateWave(dt) {
   while (
     wave.spawnTimer <= 0
     && wave.spawned < def.total
-    && state.enemies.length < def.maxActive
+    && activeWaveEnemyCount() < def.maxActive
   ) {
     spawnEnemy(weightedEnemyId(def.enemies));
     wave.spawned += 1;
     wave.spawnTimer += def.spawnInterval;
   }
 
-  if (wave.spawned >= def.total && state.enemies.length === 0) {
+  if (wave.spawned >= def.total && activeWaveEnemyCount() === 0) {
     advanceWave("clear");
   }
 }
@@ -5421,6 +5611,115 @@ function updateRangedEnemy(enemy, target, targetDistance, dt) {
   });
 }
 
+function isRareTerrainPoint(enemy, x, y) {
+  if (!enemy.terrainKind) return true;
+  const terrain = terrainAtPosition(x, y);
+  if (terrain.kind !== enemy.terrainKind) return false;
+  return Math.hypot(x - enemy.spawnX, y - enemy.spawnY) <= (enemy.roamRadius || 520);
+}
+
+function targetInRareTerrain(enemy, target) {
+  return isRareTerrainPoint(enemy, target.x, target.y);
+}
+
+function rareRoamTarget(enemy) {
+  for (let i = 0; i < 48; i += 1) {
+    const angle = rand(0, TAU);
+    const distance = rand(40, enemy.roamRadius || 520);
+    const point = {
+      x: enemy.spawnX + Math.cos(angle) * distance,
+      y: enemy.spawnY + Math.sin(angle) * distance,
+    };
+    if (isRareTerrainPoint(enemy, point.x, point.y)) return point;
+  }
+  return { x: enemy.spawnX, y: enemy.spawnY };
+}
+
+function moveRareEnemyToward(enemy, target, dt, speedMultiplier = 1) {
+  if (enemy.rooted > 0) {
+    enemy.moving = false;
+    return false;
+  }
+  const dx = target.x - enemy.x;
+  const dy = target.y - enemy.y;
+  const len = Math.hypot(dx, dy) || 1;
+  const slowFactor = enemy.slow > 0 || enemy.poison > 0 ? 0.48 : 1;
+  const terrainSpeed = terrainSpeedAt(enemy.x, enemy.y);
+  const nextX = enemy.x + (dx / len) * enemy.speed * speedMultiplier * slowFactor * terrainSpeed * dt;
+  const nextY = enemy.y + (dy / len) * enemy.speed * speedMultiplier * slowFactor * terrainSpeed * dt;
+  enemy.moveDir = directionFromVector(dx, dy, enemy.moveDir);
+  if (!isRareTerrainPoint(enemy, nextX, nextY)) {
+    enemy.moving = false;
+    enemy.roamTarget = null;
+    return false;
+  }
+  enemy.moving = true;
+  enemy.x = nextX;
+  enemy.y = nextY;
+  return true;
+}
+
+function findTerrainRareTarget(enemy) {
+  const targets = enemyProjectileTargetList();
+  const range = enemy.range || 0;
+  const searchRadius = range > 0 ? range + 70 : 280;
+  let best = null;
+  let bestDistance = searchRadius;
+  for (const target of targets) {
+    const d = enemyTargetDistance(enemy, target);
+    if (d > bestDistance) continue;
+    if (range <= 0 && !targetInRareTerrain(enemy, target)) continue;
+    best = target;
+    bestDistance = d;
+  }
+  return { target: best, targetDistance: bestDistance };
+}
+
+function fireRareProjectile(enemy, target) {
+  const dx = target.x - enemy.x;
+  const dy = target.y - enemy.y;
+  const len = Math.hypot(dx, dy) || 1;
+  const speed = enemy.projectileSpeed || 270;
+  const range = enemy.range || 225;
+  enemy.attackTimer = enemy.attackCooldown || 1.75;
+  state.projectiles.push({
+    faction: "enemy",
+    x: enemy.x + (dx / len) * 18,
+    y: enemy.y + (dy / len) * 18,
+    vx: (dx / len) * speed,
+    vy: (dy / len) * speed,
+    life: range / speed,
+    radius: 7,
+    damage: enemy.damage,
+    color: enemy.accent || "#7dd3ff",
+    options: { color: enemy.accent || "#7dd3ff" },
+  });
+  addParticles(enemy.x, enemy.y - 10, enemy.accent || "#7dd3ff", 6, 80);
+}
+
+function updateTerrainRareEnemy(enemy, dt) {
+  const { target, targetDistance } = findTerrainRareTarget(enemy);
+  const range = enemy.range || 0;
+  if (target) {
+    enemy.moveDir = directionFromVector(target.x - enemy.x, target.y - enemy.y, enemy.moveDir);
+    if (range > 0 && targetDistance <= range) {
+      enemy.moving = false;
+      if (enemy.attackTimer <= 0) fireRareProjectile(enemy, target);
+      return;
+    }
+    if (enemyMeleeAttack(enemy, target, targetDistance)) return;
+    if (targetInRareTerrain(enemy, target)) {
+      moveRareEnemyToward(enemy, target, dt, 0.92);
+      return;
+    }
+  }
+
+  if (!enemy.roamTarget || Math.hypot(enemy.roamTarget.x - enemy.x, enemy.roamTarget.y - enemy.y) < 18) {
+    enemy.roamTarget = rareRoamTarget(enemy);
+  }
+  moveRareEnemyToward(enemy, enemy.roamTarget, dt, 0.55);
+}
+
 function updateBoarEnemy(enemy, target, dt) {
   enemy.stateTimer -= dt;
   if (enemy.chargeState === "charge") {
@@ -5798,6 +6097,7 @@ function updateTreantEnemy(enemy, dt) {
 }
 
 function updateEnemies(dt) {
+  updateRareMonsterSpawns(dt);
   updateWave(dt);
 
   for (const enemy of state.enemies) {
@@ -5828,6 +6128,11 @@ function updateEnemies(dt) {
 
     if (enemy.behavior === "treantBoss") {
       updateTreantEnemy(enemy, dt);
+      continue;
+    }
+
+    if (enemy.behavior === "terrainRare") {
+      updateTerrainRareEnemy(enemy, dt);
       continue;
     }
 
@@ -6050,6 +6355,7 @@ function hirePerson(def) {
     label: companionName,
     name: companionName,
     unitLabel: def.label,
+    portrait: randomPortraitFor(def),
     role: def.role,
     kind: def.kind || "defender",
     x: player.x + homeOffset.x,
@@ -6151,6 +6457,75 @@ function enchantWeapon(key) {
   weapon.enchants[key] = current + 1;
   showToast(`${weapon.name}の${def.label}が +${weapon.enchants[key]} になりました`);
   renderStaticUi();
+}
+
+function escapeHtml(value) {
+  return String(value ?? "")
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;")
+    .replace(/'/g, "&#39;");
+}
+
+function allyRoleIconSrc(ally) {
+  const def = hireDefById(ally.id);
+  return def?.icon || "assets/icons/hire-guard.png";
+}
+
+function allyPortraitSrc(ally) {
+  return ally.portrait || allyRoleIconSrc(ally);
+}
+
+function baseNameForUid(uid) {
+  const base = baseBuildings().find((item) => item.uid === uid);
+  return base?.label || "拠点";
+}
+
+function allyCardMarkup(ally, statusText, extraClass = "") {
+  const hpRatio = ally.maxHp > 0 ? clamp(ally.hp / ally.maxHp, 0, 1) : 0;
+  const hpText = ally.hp > 0 ? `${Math.ceil(ally.hp)} / ${Math.ceil(ally.maxHp)}` : "0";
+  return `
+    <div class="ally-card ${extraClass}">
+      <img class="ally-portrait" src="${escapeHtml(allyPortraitSrc(ally))}" alt="">
+      <span class="ally-role-icon"><img src="${escapeHtml(allyRoleIconSrc(ally))}" alt=""></span>
+      <span class="ally-copy">
+        <strong>${escapeHtml(ally.label || allyDisplayName(ally))}</strong>
+        <small>${escapeHtml(allyTypeLabel(ally))} / LV ${ally.level || 1} / ${escapeHtml(statusText)}</small>
+        <span class="ally-status-row">
+          <span>HP ${escapeHtml(hpText)}</span>
+          <span>EXP ${Math.floor(ally.xp || 0)} / ${Math.floor(ally.xpNext || 54)}</span>
+          <span>体力 ${Math.round(hpRatio * 100)}%</span>
+        </span>
+      </span>
+    </div>
+  `;
+}
+
+function renderAllySection(title, allies, statusFor, extraClass = "") {
+  if (allies.length === 0) return "";
+  const cards = allies.map((ally) => allyCardMarkup(ally, statusFor(ally), extraClass)).join("");
+  return `
+    <div class="ally-section">
+      <div class="ally-section-title">${escapeHtml(title)} ${allies.length}</div>
+      ${cards}
+    </div>
+  `;
+}
+
+function renderAllyPanel() {
+  if (!ui.allyList) return;
+  const alive = activeAllies();
+  const following = alive.filter((ally) => !assignedBase(ally));
+  const baseAssigned = alive.filter((ally) => assignedBase(ally));
+  const sections = [
+    renderAllySection("連れて歩いている仲間", following, () => "同行中"),
+    renderAllySection("拠点にいる仲間", baseAssigned, (ally) => `${baseNameForUid(ally.assignedBaseUid)}勤務`),
+    renderAllySection("力尽きた仲間", state.fallenAllies, (ally) => `${baseNameForUid(ally.fallenBaseUid)}で待機`, "fallen"),
+  ].filter(Boolean);
+  ui.allyList.innerHTML = sections.length > 0
+    ? sections.join("")
+    : `<div class="empty-panel">仲間はいません</div>`;
 }
 
 function renderEquippedWeaponHud() {
@@ -6282,6 +6657,7 @@ function renderStaticUi() {
   });
 
   renderSkillPanel();
+  renderAllyPanel();
 }
 
 function updateUi() {
@@ -6293,7 +6669,7 @@ function updateUi() {
     const waveDef = currentWaveDef();
     const remaining = Math.max(0, Math.ceil(waveDef.timeout - state.wave.elapsed));
     const eventLabel = waveDef.event ? ` ${waveDef.event.label}` : "";
-    ui.waveText.textContent = `WAVE ${state.wave.index}${eventLabel}  ${state.wave.spawned}/${waveDef.total}  出現中 ${state.enemies.length}/${waveDef.maxActive}  残り ${remaining}s`;
+    ui.waveText.textContent = `WAVE ${state.wave.index}${eventLabel}  ${state.wave.spawned}/${waveDef.total}  出現中 ${activeWaveEnemyCount()}/${waveDef.maxActive}  残り ${remaining}s`;
   }
   ui.woodText.textContent = Math.floor(player.wood);
   ui.stoneText.textContent = Math.floor(player.stone);
@@ -6528,6 +6904,37 @@ function drawPlayer() {
 function drawEnemy(enemy) {
   const p = worldToScreen(enemy);
   const def = enemyDefById(enemy.type);
+  const rareSprite = rareMonsterSprites[enemy.type];
+  if (rareSprite && rareMonsterSpritesReady) {
+    const frame = spriteFrame(rareSprite, enemy.moveDir, enemy.moving, 5.2);
+    drawSpriteShadow(p.x, p.y + 18, rareSprite.width * 0.62, 10, 0.22);
+    drawRareMonsterSpriteFrame(frame.frame, p.x, p.y + 25, frame.width, frame.height, { flip: frame.flip });
+    if (enemy.hurtFlash > 0) {
+      ctx.fillStyle = "rgba(255,255,190,0.28)";
+      ctx.beginPath();
+      ctx.arc(p.x, p.y + 2, enemy.radius + 6, 0, TAU);
+      ctx.fill();
+    }
+    if (enemy.rooted > 0 || enemy.slow > 0 || enemy.poison > 0) {
+      ctx.strokeStyle = enemy.poison > 0 ? "#a8e05f" : "#d8e6d3";
+      ctx.lineWidth = 2;
+      ctx.beginPath();
+      ctx.arc(p.x, p.y + 3, enemy.radius + 8, 0, TAU);
+      ctx.stroke();
+    }
+    if (enemy.confused > 0) {
+      ctx.strokeStyle = "#f0a6ff";
+      ctx.lineWidth = 2;
+      ctx.beginPath();
+      ctx.arc(p.x, p.y - 9, enemy.radius + 6 + Math.sin(state.time * 7) * 2, 0, TAU);
+      ctx.stroke();
+    }
+    ctx.fillStyle = "rgba(0,0,0,0.48)";
+    ctx.fillRect(p.x - 21, p.y - 34, 42, 4);
+    ctx.fillStyle = def.accent || "#65c47b";
+    ctx.fillRect(p.x - 21, p.y - 34, 42 * clamp(enemy.hp / enemy.maxHp, 0, 1), 4);
+    return;
+  }
   if ((enemy.type === "treantBoss" || enemy.type === "youngTreant") && treantSpritesReady) {
     const sprite = enemy.type === "treantBoss" ? treantSprite : youngTreantSprite;
     const frame = spriteFrame(sprite, enemy.moveDir, enemy.moving, enemy.type === "treantBoss" ? 3.2 : 5.4);

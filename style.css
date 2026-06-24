@@ -686,22 +686,27 @@ button[disabled] {
 
 .radial-enchants {
   --x: -112px;
-  --y: -36px;
+  --y: -48px;
 }
 
 .radial-build {
   --x: 112px;
-  --y: -36px;
+  --y: -48px;
 }
 
 .radial-hire {
-  --x: -68px;
-  --y: 96px;
+  --x: -112px;
+  --y: 48px;
 }
 
 .radial-skills {
-  --x: 68px;
-  --y: 96px;
+  --x: 112px;
+  --y: 48px;
+}
+
+.radial-allies {
+  --x: 0px;
+  --y: 118px;
 }
 
 .radial-icon {
@@ -750,8 +755,105 @@ button[disabled] {
   width: min(470px, calc(100vw - 24px));
 }
 
+.ally-panel {
+  width: min(650px, calc(100vw - 24px));
+}
+
 .skill-panel {
   width: min(720px, calc(100vw - 24px));
+}
+
+.ally-list {
+  display: grid;
+  gap: 10px;
+}
+
+.ally-section {
+  display: grid;
+  gap: 7px;
+}
+
+.ally-section-title {
+  color: var(--accent);
+  font-size: 12px;
+  font-weight: 800;
+}
+
+.ally-card {
+  display: grid;
+  grid-template-columns: 60px 38px minmax(0, 1fr);
+  gap: 10px;
+  align-items: center;
+  min-height: 72px;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 8px;
+  background: rgba(0, 0, 0, 0.2);
+  padding: 8px;
+}
+
+.ally-card.fallen {
+  opacity: 0.72;
+  border-color: rgba(231, 86, 79, 0.25);
+}
+
+.ally-portrait {
+  width: 60px;
+  height: 60px;
+  border-radius: 8px;
+  object-fit: cover;
+  background: rgba(255, 255, 255, 0.08);
+}
+
+.ally-role-icon {
+  display: grid;
+  place-items: center;
+  width: 38px;
+  height: 38px;
+  border-radius: 8px;
+  background: rgba(241, 184, 75, 0.12);
+  border: 1px solid rgba(241, 184, 75, 0.28);
+}
+
+.ally-role-icon img {
+  width: 34px;
+  height: 34px;
+  object-fit: contain;
+  image-rendering: pixelated;
+}
+
+.ally-copy {
+  min-width: 0;
+}
+
+.ally-copy strong,
+.ally-copy small {
+  display: block;
+}
+
+.ally-copy strong {
+  font-size: 13px;
+}
+
+.ally-copy small {
+  color: var(--muted);
+  font-size: 11px;
+  line-height: 1.35;
+}
+
+.ally-status-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 5px;
+  margin-top: 6px;
+}
+
+.ally-status-row span {
+  border: 1px solid rgba(246, 240, 219, 0.12);
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.06);
+  padding: 2px 7px;
+  color: var(--muted);
+  font-size: 10px;
 }
 
 .skill-grid,
@@ -1214,22 +1316,47 @@ button[disabled] {
 
   .radial-enchants {
     --x: -90px;
-    --y: -30px;
+    --y: -38px;
   }
 
   .radial-build {
     --x: 90px;
-    --y: -30px;
+    --y: -38px;
   }
 
   .radial-hire {
-    --x: -56px;
-    --y: 78px;
+    --x: -90px;
+    --y: 38px;
   }
 
   .radial-skills {
-    --x: 56px;
-    --y: 78px;
+    --x: 90px;
+    --y: 38px;
+  }
+
+  .radial-allies {
+    --x: 0px;
+    --y: 96px;
+  }
+
+  .ally-card {
+    grid-template-columns: 52px 34px minmax(0, 1fr);
+    gap: 8px;
+  }
+
+  .ally-portrait {
+    width: 52px;
+    height: 52px;
+  }
+
+  .ally-role-icon {
+    width: 34px;
+    height: 34px;
+  }
+
+  .ally-role-icon img {
+    width: 30px;
+    height: 30px;
   }
 
   button {
