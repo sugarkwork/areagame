@@ -703,7 +703,7 @@ const dogNamePool = [
   "ベル", "ノア", "テオ", "ロッキー", "ミルク", "クッキー", "ハチ", "ラテ", "ブラン", "シロップ",
 ];
 
-const MAX_SKILL_LEVEL = 10;
+const MAX_SKILL_LEVEL = 5;
 const skillDefs = [
   {
     key: "magnet",
