@@ -686,18 +686,24 @@ const itemVisuals = {
   starstone: { label: "星雫石", color: "#cfa7ff", particle: "#efe0ff", dark: "#5d4a85" },
 };
 
-const allyNamePool = [
-  "エイミー", "レベッカ", "コーネリアス", "セシリア", "アルベルト", "ベアトリス", "ロザリア", "フィリップ", "オリヴィア", "ジュリアン",
-  "クラリス", "エドガー", "マチルダ", "ヴィクター", "イザベラ", "ライオネル", "エレナ", "セドリック", "ミリアム", "ルーカス",
-  "アンジェラ", "ダリウス", "ノエル", "フローラ", "ガブリエル", "シルヴィア", "レオン", "テレサ", "ヘレナ", "バーナード",
-  "アリシア", "カミーユ", "マルセル", "リディア", "グレゴリー", "ソフィア", "ナタリア", "オスカー", "ヴィオラ", "フェリクス",
-  "メリッサ", "ランドルフ", "エステル", "ユリア", "マクシム", "クレア", "ローレンス", "エルザ", "パトリック", "モニカ",
-  "ジゼル", "エリオット", "カサンドラ", "ヒューゴ", "アデル", "セリーヌ", "ジェラルド", "マリベル", "トリスタン", "ルシア",
-  "バジル", "エヴァン", "ミランダ", "ローザ", "コンラッド", "イレーネ", "アルフォンス", "ディアナ", "ミカエル", "レティシア",
-  "ブリジット", "エドワード", "カトリーヌ", "サミュエル", "ロレッタ", "エルマー", "ヴァネッサ", "レイモンド", "マーガレット", "アーロン",
-  "セレナ", "ジョナサン", "アンナ", "ヘンリエッタ", "ダニエル", "プリシラ", "フレデリック", "エミリア", "ジョセフ", "クラウディア",
-  "ロベルト", "マリアン", "アーサー", "フランシスカ", "ジェレミー", "クリスティーナ", "ニコラス", "ヴェロニカ", "セルジュ", "オフィーリア",
+const femaleAllyNamePool = [
+  "エイミー", "レベッカ", "セシリア", "ベアトリス", "ロザリア", "オリヴィア", "クラリス", "マチルダ", "イザベラ", "エレナ",
+  "ミリアム", "アンジェラ", "ノエル", "フローラ", "シルヴィア", "テレサ", "ヘレナ", "アリシア", "リディア", "ソフィア",
+  "ナタリア", "ヴィオラ", "メリッサ", "エステル", "ユリア", "クレア", "エルザ", "モニカ", "ジゼル", "カサンドラ",
+  "アデル", "セリーヌ", "マリベル", "ルシア", "ミランダ", "ローザ", "イレーネ", "ディアナ", "レティシア", "ブリジット",
+  "カトリーヌ", "ロレッタ", "ヴァネッサ", "マーガレット", "セレナ", "アンナ", "ヘンリエッタ", "プリシラ", "エミリア", "クラウディア",
+  "マリアン", "フランシスカ", "クリスティーナ", "ヴェロニカ", "オフィーリア",
 ];
+
+const maleAllyNamePool = [
+  "コーネリアス", "アルベルト", "フィリップ", "ジュリアン", "エドガー", "ヴィクター", "ライオネル", "セドリック", "ルーカス", "ダリウス",
+  "ガブリエル", "レオン", "バーナード", "カミーユ", "マルセル", "グレゴリー", "オスカー", "フェリクス", "ランドルフ", "マクシム",
+  "ローレンス", "パトリック", "エリオット", "ヒューゴ", "ジェラルド", "トリスタン", "バジル", "エヴァン", "コンラッド", "アルフォンス",
+  "ミカエル", "エドワード", "サミュエル", "エルマー", "レイモンド", "アーロン", "ジョナサン", "ダニエル", "フレデリック", "ジョセフ",
+  "ロベルト", "アーサー", "ジェレミー", "ニコラス", "セルジュ",
+];
+
+const allyNamePool = [...femaleAllyNamePool, ...maleAllyNamePool];
 
 const dogNamePool = [
   "ポチ", "コロ", "ルーク", "ビスケット", "モカ", "チャイ", "ラッキー", "こむぎ", "ソラ", "マロン",
@@ -1279,8 +1285,18 @@ function usedCompanionNames() {
   ].map((ally) => ally.name || ally.label).filter(Boolean));
 }
 
+function companionNamePoolForDef(def = {}) {
+  if (def.kind === "dog" || def.role === "dog" || def.id === "dog") return dogNamePool;
+  if (["mage", "healer"].includes(def.role) || ["mage", "healer"].includes(def.id)) return femaleAllyNamePool;
+  if (["swordsman", "archer", "lumberjack", "miner", "repairer"].includes(def.role)
+    || ["swordsman", "archer", "lumberjack", "miner", "repairer"].includes(def.id)) {
+    return maleAllyNamePool;
+  }
+  return allyNamePool;
+}
+
 function randomCompanionName(def) {
-  const pool = def.kind === "dog" ? dogNamePool : allyNamePool;
+  const pool = companionNamePoolForDef(def);
   const used = usedCompanionNames();
   const available = pool.filter((name) => !used.has(name));
   const source = available.length > 0 ? available : pool;
@@ -3613,9 +3629,14 @@ function savedHomeOffset(saved, index) {
 }
 
 function restoredCompanionName(saved, def = {}, index = 0) {
-  if (saved.name) return saved.name;
-  if (saved.label && saved.label !== def.label) return saved.label;
-  const pool = def.kind === "dog" ? dogNamePool : allyNamePool;
+  const pool = companionNamePoolForDef(def);
+  const oppositePool = pool === femaleAllyNamePool
+    ? maleAllyNamePool
+    : pool === maleAllyNamePool
+      ? femaleAllyNamePool
+      : [];
+  const savedName = saved.name || (saved.label && saved.label !== def.label ? saved.label : "");
+  if (savedName && !oppositePool.includes(savedName)) return savedName;
   return pool[index % pool.length];
 }
 
